@@ -1,100 +1,139 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Login</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://cdn.auth0.com/js/auth0-spa-js/2.5/auth0-spa-js.production.js"></script>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      background: #f0f0f5;
-    }
-    .login-container {
-      background: white;
-      padding: 2rem;
-      border-radius: 12px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-      text-align: center;
-      max-width: 300px;
-      width: 100%;
-    }
-    button {
-      background: #0066ff;
-      border: none;
-      color: white;
-      padding: 0.8rem 1.2rem;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 1rem;
-      margin-top: 1rem;
-    }
-    button:hover {
-      background: #0052cc;
-    }
+    body{font-family:system-ui,Segoe UI,Roboto,Arial;display:flex;align-items:center;justify-content:center;height:100vh;background:#f6f8fb}
+    .card{background:#fff;padding:2rem;border-radius:12px;box-shadow:0 6px 20px rgba(0,0,0,.06);width:340px;text-align:center}
+    button{margin-top:1rem;padding:.7rem 1rem;border-radius:8px;border:0;cursor:pointer}
+    .small{font-size:.9rem;color:#666;margin-top:.6rem}
+    pre{background:#111;color:#fff;padding:.6rem;border-radius:6px;overflow:auto;max-height:140px;text-align:left}
   </style>
 </head>
 <body>
-  <div class="login-container">
-    <h2>Welcome</h2>
-    <p>Please log in to continue</p>
-    <button id="login">Log In</button>
-    <button id="logout" style="display:none;">Log Out</button>
+  <div class="card">
+    <h2>Sign in</h2>
+    <p class="small" id="status">Initializing…</p>
+    <button id="btn-login">Log in</button>
+    <button id="btn-logout" style="display:none">Log out</button>
+    <div id="user" style="margin-top:1rem"></div>
+    <details style="margin-top:12px"><summary>Debug console</summary><pre id="debug"></pre></details>
   </div>
 
   <script>
-    let auth0Client;
+    // ---------- CONFIG ----------
+    const AUTH0_DOMAIN = "YOUR_AUTH0_DOMAIN";    // e.g. dev-abc123.au.auth0.com
+    const AUTH0_CLIENT_ID = "YOUR_AUTH0_CLIENT_ID";
+    const CALLBACK_PATH = "/auth/callback";      // must match netlify.toml and Auth0 allowed callback URL
 
-    async function configureClient() {
-      auth0Client = await createAuth0Client({
-        domain: "dev-g5g1aikxy6y2dolh.au.auth0.com",       // e.g. dev-abc123.us.auth0.com
-        client_id: "nIE7zj5314lyD3wTfRIBtJ5ejZxePSoK", // from your Auth0 app
-        cacheLocation: "localstorage",     // keeps user logged in after refresh
-        useRefreshTokens: true
-      });
+    // ---------- small logger ----------
+    function dbg(...args){
+      const el = document.getElementById('debug');
+      el.textContent += args.map(a => (typeof a === 'object' ? JSON.stringify(a,null,2) : String(a))).join(' ') + '\n';
+      console.log(...args);
     }
 
-    async function login() {
-      await auth0Client.loginWithRedirect({
-        authorizationParams: {
-          redirect_uri: window.location.origin
+    (async function(){
+      try {
+        const statusEl = document.getElementById('status');
+        statusEl.textContent = 'Loading Auth0 client…';
+
+        // create client (keep cacheLocation/useRefreshTokens only if configured in Auth0)
+        const auth0 = await createAuth0Client({
+          domain: AUTH0_DOMAIN,
+          client_id: AUTH0_CLIENT_ID,
+          cacheLocation: 'localstorage',
+          useRefreshTokens: true
+        });
+
+        statusEl.textContent = 'Auth0 client ready';
+
+        // If we are on the callback path or we have auth query params, handle the redirect
+        if (window.location.pathname === CALLBACK_PATH || (window.location.search.includes('code=') && window.location.search.includes('state='))) {
+          statusEl.textContent = 'Handling callback…';
+          dbg('Handling redirect callback. location:', window.location.pathname + window.location.search);
+          try {
+            const result = await auth0.handleRedirectCallback();
+            dbg('handleRedirectCallback result:', result);
+          } catch (err) {
+            dbg('handleRedirectCallback error:', err);
+          }
+          // Remove query params from URL (so UI updates cleanly)
+          window.history.replaceState({}, document.title, window.location.origin + '/login.html');
         }
-      });
-    }
 
-    async function logout() {
-      auth0Client.logout({
-        logoutParams: {
-          returnTo: window.location.origin
+        // Helper to update UI
+        async function updateUI(){
+          try {
+            const isAuthenticated = await auth0.isAuthenticated();
+            document.getElementById('btn-login').style.display = isAuthenticated ? 'none' : 'inline-block';
+            document.getElementById('btn-logout').style.display = isAuthenticated ? 'inline-block' : 'none';
+            const u = document.getElementById('user');
+            if (isAuthenticated) {
+              const user = await auth0.getUser();
+              u.innerHTML = `<strong>${user.name || user.email || 'User'}</strong><div class="small">Logged in</div>`;
+              dbg('Logged in user:', user);
+            } else {
+              u.innerHTML = '';
+              dbg('Not authenticated');
+            }
+            statusEl.textContent = isAuthenticated ? 'Authenticated' : 'Not authenticated';
+          } catch (err) {
+            dbg('updateUI error:', err);
+            statusEl.textContent = 'Error reading auth state — open debug';
+          }
         }
-      });
-    }
 
-    async function handleRedirectCallback() {
-      if (window.location.search.includes("code=") && window.location.search.includes("state=")) {
-        await auth0Client.handleRedirectCallback();
-        window.history.replaceState({}, document.title, "/");
+        // wiring buttons
+        document.getElementById('btn-login').addEventListener('click', async () => {
+          dbg('login pressed — redirecting to Auth0');
+          try {
+            // use authorizationParams for v2 SDK; fallback redirect_uri for other versions
+            await auth0.loginWithRedirect({
+              authorizationParams: {
+                redirect_uri: window.location.origin + CALLBACK_PATH
+              },
+              // fallback: redirect_uri: window.location.origin + CALLBACK_PATH
+            });
+          } catch (err) {
+            dbg('loginWithRedirect error:', err);
+          }
+        });
+
+        document.getElementById('btn-logout').addEventListener('click', async () => {
+          dbg('logout pressed — calling logout');
+          try {
+            // logout via Auth0 endpoint (Netlify rule can redirect to auth0 logout URL too)
+            await auth0.logout({
+              logoutParams: {
+                returnTo: window.location.origin + '/login.html'
+              }
+            });
+          } catch (err) {
+            dbg('logout error:', err);
+          }
+        });
+
+        // initial UI refresh
+        await updateUI();
+
+        // OPTIONAL: try to silently get token (useful if you rely on silent auth)
+        try {
+          const token = await auth0.getTokenSilently({ ignoreCache: true });
+          dbg('getTokenSilently ok, token length:', token?.length || 0);
+        } catch (err) {
+          dbg('getTokenSilently failed (normal on first load):', err && err.message ? err.message : err);
+        }
+
+      } catch (err) {
+        dbg('Fatal initialization error:', err);
+        document.getElementById('status').textContent = 'Initialization failed — open debug';
       }
-    }
-
-    async function updateUI() {
-      const isAuthenticated = await auth0Client.isAuthenticated();
-      document.getElementById("login").style.display = isAuthenticated ? "none" : "block";
-      document.getElementById("logout").style.display = isAuthenticated ? "block" : "none";
-    }
-
-    window.onload = async () => {
-      await configureClient();
-      await handleRedirectCallback();
-      updateUI();
-
-      document.getElementById("login").onclick = login;
-      document.getElementById("logout").onclick = logout;
-    };
+    })();
   </script>
 </body>
 </html>
+        
