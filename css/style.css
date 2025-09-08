@@ -1,0 +1,250 @@
+/* BASIC RESET */
+ul,ol,li,h1,h2,h3,h4,h5,h6,pre,form,body,html,p,blockquote,fieldset,input {
+  margin: 0;
+  padding: 0;
+}
+
+/* HTML ELEMENTS */
+body {
+  overflow: hidden;
+  background-color: #000;
+  color: #fff;
+  font-family: "Segoe UI", Helvetica, Arial, sans-serif;
+}
+
+/* PICTURES */
+#pictureSlider {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -999;
+}
+#pictureSlider div {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -999;
+}
+
+/* NAVIGATION BOX */
+a {
+  text-decoration: none;
+  color: #eee;
+  font-weight: bold;
+  transition: 0.2s;
+}
+a:hover {
+  color: #fff;
+  border-bottom: 1px dotted;
+}
+
+.navbox {
+  width: 450px;
+  max-height: 40%;
+  overflow: auto;
+  position: relative;
+  left: 0;
+  opacity: 0.95;
+  background-color: rgba(0,0,0,0.7);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+/* PAGE NUMBER LIST */
+.numberButtonList {
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 8px 6px;
+  scrollbar-width: thin;
+  scrollbar-color: #666 transparent;
+}
+.numberButtonList::-webkit-scrollbar {
+  height: 6px;
+}
+.numberButtonList::-webkit-scrollbar-thumb {
+  background: #666;
+  border-radius: 4px;
+}
+.numberButtonList ul {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.numberButtonList ul li {
+  display: inline-flex;
+}
+
+/* NUMBER BUTTONS */
+.numberButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.1);
+  color: #eee;
+  font: bold 13px/1.2 Helvetica, Arial, sans-serif;
+  cursor: pointer;
+  transition: background 0.25s, transform 0.15s;
+}
+.numberButton:hover {
+  background: rgba(255,255,255,0.3);
+  color: #000;
+  transform: translateY(-2px);
+}
+.numberButton.active {
+  background: #00aaaa;
+  color: #000;
+  font-weight: bold;
+}
+
+/* MENUS */
+.nbmenu {
+  margin: 0 0 0 5px;
+  width: 100%;
+  font-size: 14px;
+}
+.nbmenu li {
+  text-align: left;
+  padding: 6px 10px;
+  max-width: 300px;
+  overflow: hidden;
+}
+
+#navboxContents {
+  padding: 10px 20px 10px 0;
+  margin: 0;
+}
+
+label.checkbox {
+  font-weight: bold;
+  cursor: pointer;
+}
+input[type="checkbox"] {
+  cursor: pointer;
+}
+
+/* TITLE + CONTROLS */
+#controlsDiv {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+}
+#titleDiv {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+.navbox h2 {
+  padding: 10px;
+  font: bold 20px Helvetica, Arial, sans-serif;
+}
+.navbox h3 {
+  padding: 0 10px 10px 10px;
+  font: bold 12px Helvetica, Arial, sans-serif;
+}
+.navbox p {
+  padding: 20px;
+  font-size: 13px;
+  color: #ddd;
+}
+.navbox p.bottom {
+  position: absolute;
+  bottom: 5px;
+  right: 5px;
+}
+
+/* COLLAPSER */
+.collapser {
+  border: 1px solid #555;
+  font-size: 18px;
+  color: #bbb;
+  padding: 0 8px;
+  float: right;
+  cursor: pointer;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.1);
+  transition: background 0.2s;
+}
+.collapser:hover {
+  background: rgba(255,255,255,0.3);
+}
+
+/* ARROWS */
+.prevArrow,
+.nextArrow {
+  position: absolute;
+  top: 50%;
+  width: 0;
+  height: 0;
+  opacity: 0.8;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+.prevArrow {
+  left: 12px;
+  border-top: 15px solid transparent;
+  border-bottom: 15px solid transparent;
+  border-right: 30px solid white;
+}
+.nextArrow {
+  right: 12px;
+  border-top: 15px solid transparent;
+  border-bottom: 15px solid transparent;
+  border-left: 30px solid white;
+}
+.prevArrow:hover,
+.nextArrow:hover {
+  opacity: 1;
+}
+
+/* FULLSCREEN ICON */
+#fullScreenButton {
+  width: 20px;
+  margin-left: 10px;
+  cursor: pointer;
+  opacity: 0.8;
+  transition: transform 0.2s, opacity 0.2s;
+}
+#fullScreenButton:hover {
+  opacity: 1;
+  transform: scale(1.1);
+}
+#searchBar {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  background: rgba(0,0,0,0.6);
+  padding: 8px 12px;
+  border-radius: 12px;
+}
+#searchBar input {
+  padding: 6px;
+  border-radius: 8px;
+  border: none;
+  width: 220px;
+}
+#searchBar button {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: none;
+  background: #2196f3;
+  color: white;
+  cursor: pointer;
+}
+#searchBar button:hover {
+  background: #1976d2;
+}
