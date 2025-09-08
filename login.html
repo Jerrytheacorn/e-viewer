@@ -25,8 +25,8 @@
 
   <script>
     // ---------- CONFIG ----------
-    const AUTH0_DOMAIN = "YOUR_AUTH0_DOMAIN";    // e.g. dev-abc123.au.auth0.com
-    const AUTH0_CLIENT_ID = "YOUR_AUTH0_CLIENT_ID";
+    const AUTH0_DOMAIN = "dev-g5g1aikxy6y2dolh.au.auth0.com";    // e.g. dev-abc123.au.auth0.com
+    const AUTH0_CLIENT_ID = "nIE7zj5314lyD3wTfRIBtJ5ejZxePSoK";
     const CALLBACK_PATH = "/auth/callback";      // must match netlify.toml and Auth0 allowed callback URL
 
     // ---------- small logger ----------
@@ -116,6 +116,7 @@
             dbg('logout error:', err);
           }
         });
+
 
         // initial UI refresh
         await updateUI();
