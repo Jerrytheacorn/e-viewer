@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta http-equiv="content-type" content="text/html;charset=utf-8" />
+        <title>e621P</title>
+        <meta name="description" content="A fullscreen presentation or slide show of e621. e621p" />
+        <meta name="format-detection" content="telephone=no" />
+        <meta name="format-detection" content="date=no" />
+        <meta name="format-detection" content="address=no" />   
+        <link rel="shortcut icon" href="./images/favicon.png" />
+        <link rel="stylesheet" type="text/css" href="./css/style.css" />
+        <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+        <script type="text/javascript" src="./js/jquery.touchwipe.js"></script>
+        <script type="text/javascript" src="./js/script.js"></script>
+        <script type="text/javascript" src="https://assets.gfycat.com/js/gfyajax-0.517d.js"></script>
+        <script async src="https://www.googletagmanager.com/gtag/js?id=UA-67290543-1"></script>
+        <script>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'UA-67290543-1');
+        </script>
+    </head>
+    <body id="page">
+        <div id="searchBar">
+        <input type="text" id="tagSearch" placeholder="Search tags (e.g. wolf, cute)">
+        <button id="searchBtn">Search</button>
+        </div>
+        <div class="prevArrow fadeOnIdle" title="The arrow keys work too" id="prevButton"></div>
+        <div class="nextArrow fadeOnIdle" title="Try the arrow keys too" id="nextButton"></div>
+        <div id="controlsDiv" class='navbox clouds fadeOnIdle'>
+            <div class="collapser" data-openstate="open">-</div>
+            <div id="navboxContents">
+                <ul class="nbmenu">
+                    <li id="subredditUrl"><noscript>No javascript, no gain.</noscript>
+                    </li>
+                    <li>
+                        <a href="https://github.com/SilentDeath1/e621p/blob/master/README.md" title="hotkeys">hotkeys</a> -
+                        <a href="https://github.com/SilentDeath1/e621p" title="e621p source on github">src</a>
+                    </li>
+                    <li>
+                        <input class="checkbox" type="checkbox" name="nsfw" id="nsfw" value="Auto" checked />
+                        <label class="checkbox over18" for="nsfw"> nsfw</label>
+                        <input class="checkbox" type="checkbox" name="descending" id="descending" value="Auto" checked />
+                        <label class="checkbox" for="descending"> Descending</label>
+                        <img src="./images/fullscreen.png" id="fullScreenButton" alt="Fullscreen" />
+                    </li>
+                </ul>
+                <ul class="nbmenu">
+                    <li>
+                        <input class="checkbox" type="checkbox" name="autoNextSlide" id="autoNextSlide" value="Auto" checked />
+                        <label class="checkbox" for="autoNextSlide"> Auto-next</label>
+                        every <input type="text" name="timeToNextSlide" id="timeToNextSlide" value="10" size="2" /> seconds
+                    </li>
+                    <li>
+                        <a id='navboxCommentsLink' href='#' title='Comments on e621'>comments</a>
+                    </li>
+                    <li>
+                        <a id='navboxLink' href='#' title='placeholder'>image</a>
+                    </li>
+                </ul>
+                <div class="numberButtonList">
+                    <ul id="allNumberButtons">
+                    <!-- Slide number buttons will be injected by jQuery -->
+                    </ul>
+                    <ul id="sfwNumberButtons">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div id="titleDiv" class='navbox clouds'>
+            <div class="collapser" data-openstate="open">-</div>
+            <h2 id='navboxTitle'>
+                <noscript>Javascript is required for e621p to work :(</noscript>
+            </h2>
+            <h3><a id='navboxSubreddit' href="https://e621.net">
+                <noscript>Javascript is required for e621p to work :(</noscript>
+            </a></h3>
+        </div>        
+        <div id="recommend" style="display:none; text-align: center; margin: 10px; color: rgb(170, 170, 170);">
+            <p>Maybe try these presentations instead:</p>
+            <ul>
+              <li>
+                  <a href="/?tags=shark&page=&limit=10">sharks</a>
+              </li>
+              <li>
+                  <a href="/?tags=dragon&page=&limit=10">dragons</a>
+              </li>
+              <li>
+                  <a href="/?tags=wolf&page=&limit=10">wolfs</a>
+              </li>
+              <li>
+                  <a href="/?tags=dogs&page=&limit=10">dogs</a>
+              </li>
+              <li>
+                  <a href="/?tags=foxes&page=&limit=10">foxes</a>
+              </li>
+              <li>
+                  <a href="/?tags=animation&page=&limit=10">animation</a>
+              </li>
+              <li>
+                  <a href="/?tags=straight&page=&limit=10">straight</a>
+              </li>
+              <li>
+                  <a href="/?tags=gay&page=&limit=10">gay</a>
+              </li>
+          </ul>
+        </div>   
+        <div id="pictureSlider">
+            <!-- Pictures will be injected by jQuery -->
+            <div>
+                <!-- Empty div to be animated out, do not erase -->
+            </div>
+        </div>
+
+    </body>
+</html>
