@@ -1,0 +1,23 @@
+# netlify.toml
+# Redirect rules to support Auth0 callback and SPA routing.
+# Replace placeholders: YOUR_AUTH0_DOMAIN, YOUR_NETLIFY_URL, YOUR_AUTH0_CLIENT_ID
+
+[[redirects]]
+    # Auth0 redirect (use whatever callback path you configured in Auth0)
+    from = "/auth/callback"
+    to = "/"
+    status = 200
+    force = true
+
+[[redirects]]
+    # Optional logout redirect: sends user to Auth0 logout endpoint and returns to your site
+    from = "/logout"
+    to = "https://dev-g5g1aikxy6y2dolh.au.auth0.com/v2/logout?returnTo=https://thaimonel.netlify.app/&client_id=nIE7zj5314lyD3wTfRIBtJ5ejZxePSoK"
+    status = 302
+    force = true
+
+[[redirects]]
+    # Catch-all for single-page app routing (serve index.html for app routes)
+    from = "/*"
+    to = "/index.html"
+    status = 200
