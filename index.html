@@ -3,12 +3,15 @@
     <head>
         <meta http-equiv="content-type" content="text/html;charset=utf-8" />
         <title>e621P</title>
-        <meta name="description" content="A fullscreen presentation or slide show of e621. e621p" />
+    <meta name="description" content="A fullscreen presentation or slide show of e621. e621p" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="format-detection" content="telephone=no" />
         <meta name="format-detection" content="date=no" />
         <meta name="format-detection" content="address=no" />   
         <link rel="shortcut icon" href="./images/favicon.png" />
-        <link rel="stylesheet" type="text/css" href="./css/style.css" />
+    <link rel="stylesheet" type="text/css" href="./css/style.css" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
         <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
         <script type="text/javascript" src="./js/jquery.touchwipe.js"></script>
         <script type="text/javascript" src="./js/script.js"></script>
@@ -22,10 +25,50 @@
         </script>
     </head>
     <body id="page">
-        <div id="searchBar">
-        <input type="text" id="tagSearch" placeholder="Search tags (e.g. wolf, cute)">
-        <button id="searchBtn">Search</button>
+        <div id="settingsMenuContainer">
+            <button id="settingsButton" aria-label="Settings" title="Settings">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 5 15.4a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 8a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 8 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09c0 .66.39 1.26 1 1.51a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 8c.66 0 1.26.39 1.51 1H21a2 2 0 0 1 0 4h-.09c-.66 0-1.26.39-1.51 1z"/></svg>
+            </button>
+            <div id="settingsDropdown" class="hidden" role="menu" aria-label="Settings menu">
+                <div class="settingsDropdownHeader">Settings</div>
+                <ul>
+                    <li class="settingsDropdownItem"><a href="https://github.com/SilentDeath1/e621p" target="_blank" rel="noopener">Source (src)</a></li>
+                    <li class="settingsDropdownItem">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;"> 
+                            <input type="checkbox" id="togglePreview" />
+                            <span>Enable search previews</span>
+                        </label>
+                    </li>
+                    <li class="settingsDropdownItem">
+                        <label style="display:flex;flex-direction:column;gap:6px;">
+                            <span style="font-weight:600;color:var(--muted);">API Key (optional)</span>
+                            <input id="apiKeyInput" type="password" placeholder="Paste your API key" style="width:100%; padding:6px; border-radius:6px; border:1px solid rgba(255,255,255,0.06); background:transparent; color:#fff;">
+                            <div style="display:flex;gap:8px;margin-top:6px;">
+                                <button id="saveApiKeyBtn" style="padding:6px 8px;border-radius:6px;background:var(--accent);border:none;color:#002222;font-weight:700;">Save</button>
+                                <button id="clearApiKeyBtn" style="padding:6px 8px;border-radius:6px;background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted);font-weight:700;">Clear</button>
+                            </div>
+                        </label>
+                    </li>
+                </ul>
+            </div>
         </div>
+        <div id="searchBar" role="search" aria-label="Search tags">
+            <label for="tagSearch" class="visually-hidden">Search tags</label>
+                        <input type="text" id="tagSearch" placeholder="Search tags (e.g. wolf, cute)" aria-label="Search tags" autocomplete="off">
+                        <button id="searchBtn" aria-label="Search" title="Search">Search</button>
+                        <button id="randomBtn" aria-label="Random" title="Random">Random</button>
+                        <label id="inlinePreviewToggle" title="Enable previews" style="display:flex;align-items:center;gap:6px;">
+                            <input type="checkbox" id="togglePreviewInline" />
+                        </label>
+                        <div id="searchSuggestions" class="hidden" role="listbox" aria-label="Search suggestions"></div>
+                        <div id="searchPreview" class="hidden" aria-hidden="true">
+                                <div id="previewControls" style="position:absolute;right:8px;top:8px;z-index:1600;">
+                                        <button id="previewSearchBtn" title="Search this tag" style="padding:6px 8px;border-radius:6px;background:var(--accent);border:none;color:#002222;font-weight:700;">Search</button>
+                                </div>
+                        </div>
+        </div>
+        <!-- Non-blocking status messages (network / loading / errors) -->
+        <div id="statusMessage" class="hidden" aria-live="polite"></div>
         <div class="prevArrow fadeOnIdle" title="The arrow keys work too" id="prevButton"></div>
         <div class="nextArrow fadeOnIdle" title="Try the arrow keys too" id="nextButton"></div>
         <div id="controlsDiv" class='navbox clouds fadeOnIdle'>
@@ -35,11 +78,10 @@
                     <li id="subredditUrl"><noscript>No javascript, no gain.</noscript>
                     </li>
                     <li>
-                        <a href="https://github.com/SilentDeath1/e621p/blob/master/README.md" title="hotkeys">hotkeys</a> -
-                        <a href="https://github.com/SilentDeath1/e621p" title="e621p source on github">src</a>
+                        <a title="hotkeys">hotkeys</a>
                     </li>
                     <li>
-                        <input class="checkbox" type="checkbox" name="nsfw" id="nsfw" value="Auto" checked />
+                        <input class="checkbox" type="checkbox" name="nsfw" id="nsfw" value="Auto" />
                         <label class="checkbox over18" for="nsfw"> nsfw</label>
                         <input class="checkbox" type="checkbox" name="descending" id="descending" value="Auto" checked />
                         <label class="checkbox" for="descending"> Descending</label>
@@ -73,9 +115,6 @@
             <h2 id='navboxTitle'>
                 <noscript>Javascript is required for e621p to work :(</noscript>
             </h2>
-            <h3><a id='navboxSubreddit' href="https://e621.net">
-                <noscript>Javascript is required for e621p to work :(</noscript>
-            </a></h3>
         </div>        
         <div id="recommend" style="display:none; text-align: center; margin: 10px; color: rgb(170, 170, 170);">
             <p>Maybe try these presentations instead:</p>
@@ -113,5 +152,36 @@
             </div>
         </div>
 
+    <script>
+    // Settings menu toggle
+    document.addEventListener('DOMContentLoaded', function() {
+        var btn = document.getElementById('settingsButton');
+        var menu = document.getElementById('settingsDropdown');
+        btn.addEventListener('click', function(e) {
+            menu.classList.toggle('hidden');
+        });
+        document.addEventListener('click', function(e) {
+            if (!btn.contains(e.target) && !menu.contains(e.target)) {
+                menu.classList.add('hidden');
+            }
+        });
+    });
+    </script>
+        <div id="hotkeyHelpModal" class="hidden" tabindex="-1" role="dialog" aria-modal="true" aria-label="Hotkey help">
+            <div class="hotkeyHelpContent">
+                <h2>Keyboard & Touch Shortcuts</h2>
+                <ul>
+                    <li><b>a</b> – toggles auto-next (play/pause)</li>
+                    <li><b>t</b> – collapse/uncollapse title</li>
+                    <li><b>c</b> – collapse/uncollapse controls</li>
+                    <li><b>i</b> – open image in a new tab</li>
+                    <li><b>r</b> – open comments in a new tab</li>
+                    <li><b>f</b> – toggle full screen mode</li>
+                    <li><b>Arrow keys</b>, <b>PgUp/PgDn</b>, <b>Spacebar</b> – change slides</li>
+                    <li><b>Swipe gestures</b> – change slides on phones</li>
+                </ul>
+                <button id="closeHotkeyHelp">Close</button>
+            </div>
+        </div>
     </body>
 </html>

@@ -305,7 +305,9 @@ $(function () {
     var initState = function () {
         var nsfwByCookie = getCookie(nsfwCookie);
         if (nsfwByCookie == undefined) {
-            nsfw = true;
+            // default to SFW (nsfw = false) for safer default behavior
+            nsfw = false;
+            $("#nsfw").prop("checked", nsfw);
         } else {
             nsfw = (nsfwByCookie === "true");
             $("#nsfw").prop("checked", nsfw);
@@ -439,6 +441,33 @@ $(function () {
 
     // Register keyboard events on the whole document
     $(document).keyup(function (e) {
+        // Hotkey help modal logic
+        var showHotkeyHelp = function() {
+            var modal = document.getElementById('hotkeyHelpModal');
+            if (modal) {
+                modal.classList.remove('hidden');
+                modal.focus();
+            }
+        };
+        var hideHotkeyHelp = function() {
+            var modal = document.getElementById('hotkeyHelpModal');
+            if (modal) {
+                modal.classList.add('hidden');
+            }
+        };
+        // Show help on '?' or 'h' (ignore if typing in input)
+        var active = document.activeElement;
+        if (active && (active.id === 'tagSearch' || $(active).closest('#tagSearch').length)) {
+            return;
+        }
+        if (e.key === '?' || e.key === 'h' || e.key === 'H') {
+            showHotkeyHelp();
+            return;
+        }
+        if (e.key === 'Escape') {
+            hideHotkeyHelp();
+            return;
+        }
         if(e.ctrlKey) {
             // ctrl key is pressed so we're most likely switching tabs or doing something
             // unrelated to redditp UI
@@ -485,6 +514,39 @@ $(function () {
             case SPACE:
                 return nextSlide();
         }
+    });
+
+    // Random slide helper (respects nsfw setting)
+    var showRandomSlide = function () {
+        if (ep.photos.length === 0) {
+            // If no photos yet, trigger a load and then pick random after a short delay
+            getRedditImages();
+            setTimeout(function () {
+                if (ep.photos.length === 0) return;
+                var candidates = [];
+                for (var i = 0; i < ep.photos.length; i++) {
+                    if (!ep.photos[i].over18 || nsfw) candidates.push(i);
+                }
+                if (candidates.length === 0) return;
+                var idx = candidates[Math.floor(Math.random() * candidates.length)];
+                startAnimation(idx);
+            }, 1000);
+            return;
+        }
+
+        var candidates = [];
+        for (var i = 0; i < ep.photos.length; i++) {
+            if (!ep.photos[i].over18 || nsfw) candidates.push(i);
+        }
+        if (candidates.length === 0) return;
+        var idx = candidates[Math.floor(Math.random() * candidates.length)];
+        startAnimation(idx);
+    };
+
+    // Close hotkey help with button
+    $(document).on('click', '#closeHotkeyHelp', function() {
+        var modal = document.getElementById('hotkeyHelpModal');
+        if (modal) modal.classList.add('hidden');
     });
 
 
@@ -538,18 +600,8 @@ $(function () {
 
         if (isLastImage(activeIndex) && ep.subredditUrl.indexOf('/imgur') != 0) {
             // e621pPageNumber++;
+            // Load more images when we reach the end of the loaded set
             getRedditImages();
-            if(e621pAfterId === 0) e621pAfterId = item.id
-
-            if(e621pDescending){
-                if(item.id < e621pAfterId){
-                    e621pAfterId = item.id
-                }
-            }else{
-                if(item.id > e621pAfterId){
-                    e621pAfterId = item.id
-                }
-            }
 
 
         }
@@ -806,10 +858,26 @@ $("#tagSearch").keypress(function (e) {
         var jsonUrl = "https://e621.net/posts.json?tags="+e621pRating+"+"+e621pTags +"&limit="+ e621pLimit+`&page=${e621pAfterId != 0 ? (e621pDescending ? "b": "a") : ("") }`+e621pAfterId;
         //console.log(jsonUrl);
         //log(jsonUrl);
-        var failedAjax = function (data) {
-            alert("Failed ajax, maybe a bad url? Sorry about that :(");
+        // non-blocking status helper
+        var showStatus = function(msg, timeout) {
+            var el = document.getElementById('statusMessage');
+            if (!el) return;
+            el.textContent = msg;
+            el.classList.remove('hidden');
+            if (timeout && timeout > 0) {
+                setTimeout(function(){ el.classList.add('hidden'); }, timeout);
+            }
+        };
+
+        var failedAjax = function (jqXHR, textStatus, errorThrown) {
+            console.warn('AJAX failed', textStatus, errorThrown);
+            // show a non-blocking status and attempt retries (handled below)
+            showStatus('Network error — retrying...', 3000);
             failCleanup();
         };
+        var retryCount = 0;
+        var maxRetries = 3;
+        var retryDelayBase = 800; // ms
         var handleData = function (data) {
             //redditData = data //global for debugging data
             // NOTE: if data.data.after is null then this causes us to start
@@ -820,8 +888,17 @@ $("#tagSearch").keypress(function (e) {
 
             console.log(data)
 
-            if (returnJson.length === 0) {
-                alert("No data from this url :(");
+            if (!returnJson || returnJson.posts === undefined || returnJson.posts.length === 0) {
+                console.warn('Empty data from API', returnJson);
+                // If we haven't retried yet, try again before giving up
+                if (retryCount < maxRetries) {
+                    retryCount++;
+                    var delay = retryDelayBase * Math.pow(2, retryCount - 1);
+                    showStatus('Received empty data — retrying...', 2000);
+                    setTimeout(getRedditImages, delay);
+                    return;
+                }
+                showStatus('No data available.', 4000);
                 return;
             }
 
@@ -903,14 +980,30 @@ $("#tagSearch").keypress(function (e) {
 
         // I still haven't been able to catch jsonp 404 events so the timeout
         // is the current solution sadly.
-        $.ajax({
-            url: jsonUrl,
-            dataType: 'json',
-            success: handleData,
-            error: failedAjax,
-            404: failedAjax,
-            timeout: 5000
-        });
+        var doAjax = function() {
+            var settings = {
+                url: jsonUrl,
+                dataType: 'json',
+                success: function(data){
+                    retryCount = 0; // reset on success
+                    handleData(data);
+                },
+                error: function(jqXHR, textStatus, errorThrown){
+                    retryCount++;
+                    if (retryCount <= maxRetries) {
+                        var delay = retryDelayBase * Math.pow(2, retryCount - 1);
+                        showStatus('Network error — retrying in ' + Math.round(delay/1000) + 's', 2000 + delay);
+                        setTimeout(doAjax, delay);
+                    } else {
+                        failedAjax(jqXHR, textStatus, errorThrown);
+                        showStatus('Failed to load images. Try again later.', 5000);
+                    }
+                },
+                timeout: 8000
+            };
+            $.ajax(attachApiKeyHeaders(settings));
+        };
+        doAjax();
     };
 
     // var getImgurAlbum = function (url) {
@@ -1011,7 +1104,7 @@ $("#tagSearch").keypress(function (e) {
         // if(displayedSubredditName.length > capsize) {
         //     displayedSubredditName = displayedSubredditName.substr(0,capsize) + "&hellip;";
         // }
-        $('#subredditUrl').html("<a href=\' https://www.e621.net \'> E621.net</a>");
+    $('#subredditUrl').text('');
 
         document.title = "e621p - " + (e621pTags ? e621pTags : "Latest");
     };
@@ -1054,11 +1147,385 @@ $("#tagSearch").keypress(function (e) {
         getRedditImages();
     });
 
+    // Random button click
+    $("#randomBtn").click(function () {
+        // Use the special tag 'random' to fetch randomish content from the API
+        $("#tagSearch").val('random');
+        $("#searchBtn").click();
+    });
+
+    // also allow pressing 'g' to go random (lowercase g, non-conflicting)
+    $(document).on('keypress', function(e){
+        if (e.key === 'g' || e.key === 'G') {
+            var active = document.activeElement;
+            if (active && (active.id === 'tagSearch' || $(active).closest('#tagSearch').length)) return;
+            showRandomSlide();
+        }
+    });
+
     // existing initial load
     // if(ep.subredditUrl.indexOf('/imgur') == 0)
     //     getImgurAlbum(ep.subredditUrl);
     // else
     getRedditImages();
+
+    /********************
+     * Search suggestions
+     ********************/
+    var commonSuggestions = [
+        'random','wolf','fox','dragon','shark','dog','cat','animation','cute','landscape','portrait','furry','male','female','straight','gay'
+    ];
+
+    var suggestionsEl = $("#searchSuggestions");
+    var previewEl = $("#searchPreview");
+
+    var showSuggestions = function(list) {
+        suggestionsEl.empty();
+        if (!list || list.length === 0) { suggestionsEl.addClass('hidden'); return; }
+        list.forEach(function(tag){
+            var item;
+            if (typeof tag === 'string') {
+                item = $('<div role="option" class="suggestion"></div>').data('tag', tag).append($('<span class="tag-name"/>').text(tag));
+            } else if (tag && typeof tag === 'object') {
+                // API returned tag objects
+                item = $('<div role="option" class="suggestion"></div>').data('tag', tag.name);
+                item.append($('<span class="tag-name"/>').text(tag.name));
+                item.append($('<span class="tag-count"/>').text(tag.post_count));
+            } else {
+                item = $('<div role="option" class="suggestion"></div>').data('tag', tag).append($('<span class="tag-name"/>').text(String(tag)));
+            }
+            suggestionsEl.append(item);
+        });
+        suggestionsEl.removeClass('hidden');
+    };
+
+    var filterSuggestions = function(val){
+        var q = (val || '').toLowerCase().trim();
+        if(q.length === 0){ showSuggestions(commonSuggestions.slice(0,8)); return; }
+        var out = commonSuggestions.filter(function(t){ return t.indexOf(q) === 0 || t.indexOf(q) > 0 });
+        showSuggestions(out.slice(0,12));
+
+        // fetch popular tag suggestions from API (best-effort) for 3+ chars
+        if (q.length >= 3) {
+            var tagsUrl = 'https://e621.net/tags.json?search[name_matches]=' + encodeURIComponent(q + '*') + '&limit=8';
+            $.ajax(attachApiKeyHeaders({ url: tagsUrl, dataType: 'json', success: function(data){
+                try {
+                    if (data && data.length) {
+                        var names = data.map(function(t){ return t.name; }).filter(Boolean);
+                        var merged = names.concat(out).filter(function(v,i,self){ return self.indexOf(v) === i; });
+                        showSuggestions(merged.slice(0,12));
+                    }
+                } catch(e){}
+            }, error: function(){} , timeout: 5000 }));
+        }
+    };
+
+    // Preview thumbnail fetch cache
+    var previewCache = {};
+
+    // preview toggle state and request id for race-safety
+    var previewEnabled = true;
+    var previewRequestId = 0;
+
+    var previewCookie = 'searchPreviewEnabled';
+    var setPreviewCookie = function(val){ setCookie(previewCookie, val, cookieDays); };
+    var getPreviewCookie = function(){ var v = getCookie(previewCookie); return v === undefined ? null : (v === 'true'); };
+
+    // initialize preview toggle from cookie
+    var initPreviewToggle = function(){
+        var val = getPreviewCookie();
+        if (val === null) { previewEnabled = true; } else { previewEnabled = val; }
+        try { $('#togglePreview').prop('checked', previewEnabled); } catch(e){}
+        $('#togglePreview').on('change', function(){ previewEnabled = $(this).is(':checked'); setPreviewCookie(previewEnabled); });
+    };
+    initPreviewToggle();
+
+    // API Key storage helpers (localStorage)
+    var API_KEY_STORAGE = 'eviewer_api_key_v1';
+    function saveApiKey(key){
+        try { localStorage.setItem(API_KEY_STORAGE, key || ''); } catch(e){}
+    }
+    function loadApiKey(){
+        try { return localStorage.getItem(API_KEY_STORAGE) || ''; } catch(e){ return ''; }
+    }
+    function clearApiKey(){
+        try { localStorage.removeItem(API_KEY_STORAGE); } catch(e){}
+    }
+
+    // Initialize settings UI (api key input)
+    $(function(){
+        var stored = loadApiKey();
+        if (stored) {
+            $('#apiKeyInput').val(stored);
+        }
+        $('#saveApiKeyBtn').on('click', function(){
+            var v = $('#apiKeyInput').val() || '';
+            saveApiKey(v);
+            // give user some feedback
+            $('#statusMessage').text(v ? 'API key saved' : 'API key cleared').removeClass('hidden');
+            setTimeout(function(){ $('#statusMessage').addClass('hidden'); }, 1800);
+        });
+        $('#clearApiKeyBtn').on('click', function(){
+            $('#apiKeyInput').val(''); clearApiKey();
+            $('#statusMessage').text('API key cleared').removeClass('hidden');
+            setTimeout(function(){ $('#statusMessage').addClass('hidden'); }, 1500);
+        });
+    });
+
+    // Add API key to outgoing AJAX requests if present
+    // This uses jQuery's beforeSend hook per-request below; for convenience add a helper to attach headers.
+    function attachApiKeyHeaders(jqXhrSettings){
+        var key = loadApiKey();
+        if (!key) return jqXhrSettings;
+        // Common header name: Authorization: Bearer <key> (many APIs), but e621 uses 'User-Agent' and may accept 'Authorization'.
+        // We'll send both a custom header X-API-Key and Authorization: Bearer to maximize compatibility for proxies.
+        var before = jqXhrSettings.beforeSend;
+        jqXhrSettings.beforeSend = function(xhr){
+            try { xhr.setRequestHeader('Authorization', 'Bearer ' + key); } catch(e){}
+            try { xhr.setRequestHeader('X-API-Key', key); } catch(e){}
+            if (before) try { before(xhr); } catch(e){}
+        };
+        return jqXhrSettings;
+    }
+
+    var fetchPreviewForTag = function(tag, cb) {
+        if (!previewEnabled) return cb(null);
+        if (previewCache[tag]) return cb(previewCache[tag]);
+        var currentRequest = ++previewRequestId;
+        var url = 'https://e621.net/posts.json?limit=1&tags=' + encodeURIComponent(tag);
+        $.ajax(attachApiKeyHeaders({ url: url, dataType: 'json', success: function(data){
+            // if a newer request started, ignore this result
+            if (currentRequest !== previewRequestId) return cb(null);
+            try {
+                var thumb = null;
+                if (data && data.posts && data.posts.length > 0) {
+                    thumb = data.posts[0].file.url;
+                }
+                previewCache[tag] = thumb;
+                cb(thumb);
+            } catch(e){ cb(null); }
+        }, error: function(){ cb(null); }, timeout: 7000 }));
+    };
+
+    // Interactions
+    $(document).on('input', '#tagSearch', function(e){
+        var v = $(this).val();
+        filterSuggestions(v);
+    });
+
+    // click suggestion -> populate input and show preview (single click)
+    $(document).on('click', '#searchSuggestions .suggestion', function(){
+        var tag = $(this).data('tag');
+        $('#tagSearch').val(tag);
+        $('#searchSuggestions').addClass('hidden');
+        if (!previewEnabled) return;
+        previewEl.html('<div class="spinner"></div>');
+        previewEl.removeClass('hidden');
+        fetchPreviewForTag(tag, function(thumb){
+            if(!thumb) { previewEl.addClass('hidden'); return; }
+            previewEl.html('<img src="'+thumb+'" alt="preview"/>');
+            previewEl.removeClass('hidden');
+        });
+    });
+
+    // double click suggestion -> run search immediately
+    $(document).on('dblclick', '#searchSuggestions .suggestion', function(){
+        var tag = $(this).data('tag');
+        $('#tagSearch').val(tag);
+        $('#searchSuggestions').addClass('hidden');
+        $('#searchBtn').click();
+    });
+
+    // on pointer interaction (click/tap or hover) show preview — prefer click/tap for touch devices
+    $(document).on('pointerenter pointerdown click', '#searchSuggestions .suggestion', function(e){
+        // if pointerenter on desktop, allow hover behavior
+        var tag = $(this).data('tag');
+        if (!previewEnabled) return;
+        previewEl.html('<div class="spinner"></div>');
+        previewEl.removeClass('hidden');
+        fetchPreviewForTag(tag, function(thumb){
+            if(!thumb) { previewEl.addClass('hidden'); return; }
+            previewEl.html('<img src="'+thumb+'" alt="preview"/>');
+            previewEl.removeClass('hidden');
+        });
+    });
+
+    // On pointer leave (mouse) hide preview. On touch devices prefer explicit close (click outside) to avoid accidental hide.
+    $(document).on('pointerleave', '#searchSuggestions .suggestion', function(e){
+        // pointerType may be undefined in some browsers — default to hide only for mouse
+        try {
+            if (e && e.originalEvent && e.originalEvent.pointerType && e.originalEvent.pointerType !== 'touch') {
+                previewEl.addClass('hidden');
+            }
+        } catch(err){
+            previewEl.addClass('hidden');
+        }
+    });
+
+    // Clicking outside closes suggestions/preview
+    $(document).on('click', function(e){
+        if(!$(e.target).closest('#searchBar').length){
+            $('#searchSuggestions').addClass('hidden');
+            $('#searchPreview').addClass('hidden');
+        }
+    });
+
+    // show default top suggestions when focusing the input
+    $(document).on('focus', '#tagSearch', function(){ filterSuggestions($(this).val()); });
+
+    // Keyboard navigation for suggestions
+    $(document).on('keydown', '#tagSearch', function(e){
+        var KEY_UP = 38, KEY_DOWN = 40, KEY_ENTER = 13, KEY_ESC = 27, KEY_TAB = 9;
+        var visible = !suggestionsEl.hasClass('hidden');
+        if (!visible) return;
+        var active = suggestionsEl.find('.suggestion.active');
+        if (e.which === KEY_DOWN) {
+            e.preventDefault();
+            if (active.length === 0) {
+                suggestionsEl.find('.suggestion').first().addClass('active');
+            } else {
+                var next = active.next('.suggestion');
+                if (next.length) { active.removeClass('active'); next.addClass('active'); }
+            }
+        } else if (e.which === KEY_UP) {
+            e.preventDefault();
+            if (active.length === 0) {
+                suggestionsEl.find('.suggestion').last().addClass('active');
+            } else {
+                var prev = active.prev('.suggestion');
+                if (prev.length) { active.removeClass('active'); prev.addClass('active'); }
+            }
+        } else if (e.which === KEY_ENTER) {
+            e.preventDefault();
+            var sel = active.length ? active : suggestionsEl.find('.suggestion').first();
+            if (sel.length) {
+                var tag = sel.data('tag');
+                $('#tagSearch').val(tag);
+                suggestionsEl.addClass('hidden');
+                $('#searchBtn').click();
+            }
+        } else if (e.which === KEY_TAB) {
+            // show preview on tab
+            var selTab = active.length ? active : suggestionsEl.find('.suggestion').first();
+            if (selTab.length) {
+                e.preventDefault();
+                var tag = selTab.data('tag');
+                $('#tagSearch').val(tag);
+                suggestionsEl.addClass('hidden');
+                if (previewEnabled) { previewEl.html('<div class="spinner"></div>'); previewEl.removeClass('hidden'); fetchPreviewForTag(tag, function(thumb){ if(!thumb) { previewEl.html('<div class="no-preview">No preview</div>'); return; } previewEl.html('<img src="'+thumb+'" alt="preview"/>'); }); }
+            }
+        } else if (e.which === KEY_ESC) {
+            suggestionsEl.addClass('hidden');
+        }
+    });
+
+    // Preview 'Search' button inside preview area
+    $(document).on('click', '#previewSearchBtn', function(e){
+        var tag = $('#tagSearch').val().trim();
+        if (!tag) return;
+        $('#searchBtn').click();
+    });
+
+    // Render a grid of image previews under the search box
+    function renderSearchPreview(posts, query) {
+        if (!posts || posts.length === 0) {
+            $('#searchPreview').html('<div class="preview-empty">No preview results</div>');
+            $('#searchPreview').removeClass('hidden');
+            return;
+        }
+        var grid = $('<div class="preview-grid"/>');
+        posts.forEach(function(p){
+            var thumb = p.file && p.file.url ? p.file.url : '';
+            var item = $('<div class="preview-item" tabindex="0"/>');
+            var img = $('<img/>').attr('src', thumb).attr('alt', p.tags ? (p.tags.join ? p.tags.join(' ') : '') : 'preview');
+            var meta = $('<div class="preview-meta"/>');
+            var title = $('<span/>').text(query).css({'font-weight':'700'});
+            var info = $('<span/>').text(p.id ? ('#' + p.id) : '');
+            meta.append(title).append(info);
+            item.append(img).append(meta);
+            // clicking the preview opens the post url or image in a new tab
+            item.on('click', function(){
+                if (p.file && p.file.url) {
+                    window.open(p.file.url, '_blank');
+                }
+            });
+            grid.append(item);
+        });
+        $('#searchPreview').html('').append(grid);
+        $('#searchPreview').removeClass('hidden');
+    }
+
+    // Debounced fetch for preview images (best-effort)
+    var fetchSearchPreview = (function(){
+        var timer = null;
+        return function(){
+            var q = $('#tagSearch').val().trim();
+            clearTimeout(timer);
+            if (!previewEnabled) { $('#searchPreview').addClass('hidden'); return; }
+            if (!q) { $('#searchPreview').addClass('hidden'); return; }
+            timer = setTimeout(function(){
+                var url = 'https://e621.net/posts.json?limit=9&tags=' + encodeURIComponent(q);
+                $('#searchPreview').html('<div class="preview-empty"><div class="spinner"></div></div>').removeClass('hidden');
+                $.ajax(attachApiKeyHeaders({ url: url, dataType: 'json', success: function(data){
+                    try {
+                        var posts = (data && data.posts) ? data.posts : [];
+                        renderSearchPreview(posts, q);
+                    } catch(e){ $('#searchPreview').html('<div class="preview-empty">No preview results</div>'); }
+                }, error: function(){ $('#searchPreview').html('<div class="preview-empty">No preview results</div>'); }, timeout: 6000 }));
+            }, 300);
+        };
+    })();
+
+    // attach preview behavior to input (also used by suggestion preview)
+    $(document).on('input', '#tagSearch', function(){ fetchSearchPreview(); });
+
+    // hide preview on click outside (already existing handler hides suggestions) - ensure preview hidden
+    $(document).on('click', function(e){ if(!$(e.target).closest('#searchBar').length){ $('#searchPreview').addClass('hidden'); } });
+
+    // Position preview under the search bar and clamp to viewport
+    function positionPreview() {
+        var $preview = $('#searchPreview');
+        var $bar = $('#searchBar');
+        if ($preview.length === 0 || $bar.length === 0) return;
+        var barRect = $bar[0].getBoundingClientRect();
+        var previewWidth = $preview.outerWidth();
+        var left = barRect.left + (barRect.width / 2) - (previewWidth / 2);
+        // clamp
+        var minLeft = 12;
+        var maxLeft = window.innerWidth - previewWidth - 12;
+        left = Math.max(minLeft, Math.min(left, maxLeft));
+        $preview.css({ left: left + 'px' });
+    }
+
+    function positionSuggestions() {
+        var $s = $('#searchSuggestions');
+        var $bar = $('#searchBar');
+        if ($s.length === 0 || $bar.length === 0) return;
+        var barRect = $bar[0].getBoundingClientRect();
+        var sugWidth = $s.outerWidth();
+        var left = barRect.left + (barRect.width / 2) - (sugWidth / 2);
+        var minLeft = 8;
+        var maxLeft = window.innerWidth - sugWidth - 8;
+        left = Math.max(minLeft, Math.min(left, maxLeft));
+        $s.css({ left: left + 'px' });
+    }
+
+    // whenever preview becomes visible, re-position
+    var observer = new MutationObserver(function(mutations){
+        mutations.forEach(function(m){
+            if (m.target && $(m.target).is('#searchPreview')) {
+                if (!$(m.target).hasClass('hidden')) positionPreview();
+            }
+            if (m.target && $(m.target).is('#searchSuggestions')) {
+                if (!$(m.target).hasClass('hidden')) positionSuggestions();
+            }
+        });
+    });
+    var target = document.getElementById('searchPreview');
+    if (target) observer.observe(target, { attributes: true, attributeFilter: ['class'] });
+
+    // reposition on resize
+    $(window).on('resize', positionPreview);
 
         window.slideNext = function(){
             if(!nsfw) {
