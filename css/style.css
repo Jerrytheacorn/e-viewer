@@ -573,11 +573,122 @@ input[type="checkbox"] {
   #searchBar input{ width: 160px; }
 }
 
-/* Mobile / touch improvements for previews and suggestions */
+/* Mobile-first improvements */
 @media (max-width: 900px) {
-  #searchPreview { left: 12px !important; right: 12px !important; width: auto !important; max-width: calc(100vw - 24px); }
-  #searchPreview .preview-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
-  #searchPreview .preview-item img { height: 140px; }
+  /* Search bar becomes full-width and centered with larger controls */
+  #searchBar {
+    left: 50%; transform: translateX(-50%); width: calc(100% - 24px); padding: 10px; gap: 8px; box-sizing: border-box;
+    border-radius: 12px;
+  }
+  #searchBar input { width: 100%; font-size: 1.05rem; padding: 10px; }
+  #searchBar button, #randomBtn { padding: 10px 12px; font-size: 1rem; }
+
+  /* Make pictures cover the screen on phones for a better experience */
+  #pictureSlider div { background-size: cover; background-position: center; }
+
+  /* Preview becomes a bottom sheet on mobile */
+  #searchPreview {
+    position: fixed !important;
+    bottom: 12px;
+    left: 12px !important;
+    right: 12px !important;
+    max-height: 48vh;
+    z-index: 1600;
+    width: auto !important;
+    padding: 8px;
+    border-radius: 12px;
+  }
+
+  /* Suggestions should stretch full-width under the searchbar */
+  #searchSuggestions { left: 12px !important; right: 12px !important; width: auto !important; }
+
+  /* Increase tappable area */
+  #searchSuggestions .suggestion { padding: 12px 14px; font-size: 16px; }
+}
+
+/* Mobile / touch improvements for previews and suggestions */
+/* Preview grid */
+.preview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 16px;
+    padding: 16px;
+    margin: 16px auto;
+    background: rgba(0,0,0,0.4);
+    border-radius: 8px;
+    max-width: 1200px;
+}
+
+.preview-grid .preview-item {
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+    background: rgba(0,0,0,0.2);
+}
+
+.preview-grid .preview-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+
+.preview-grid .preview-item img {
+    width: 100%;
+    height: 120px;
+    object-fit: cover;
+    display: block;
+}
+
+.preview-grid .preview-meta {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 8px;
+    font-size: 12px;
+    color: #fff;
+    background: linear-gradient(transparent, rgba(0,0,0,0.8));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.preview-grid .loading,
+.preview-grid .error,
+.preview-grid .no-results {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 20px;
+    color: var(--muted);
+    font-style: italic;
+}
+
+.preview-grid .loading::before {
+    content: "";
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 2px solid rgba(255,255,255,0.2);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    margin-right: 8px;
+    vertical-align: middle;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+@media (max-width: 900px) {
+  .preview-grid { 
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    margin: 12px;
+    gap: 12px;
+    padding: 12px;
+  }
+  .preview-grid .preview-item img { height: 100px; }
   #searchSuggestions { width: calc(100vw - 24px); left: 12px !important; right: 12px !important; }
   #searchSuggestions .suggestion { padding: 12px 14px; font-size: 16px; }
 }

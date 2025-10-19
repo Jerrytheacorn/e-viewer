@@ -22,7 +22,7 @@ var cookieDays = 300;
 
 // These vars are used for AJAX Url.
 var e621pTags = '';
-var e621pLimit = 10;
+var e621pLimit = 320; // request the API max (e621 caps requests server-side); avoids client-side throttling
 var e621pPageNumber = 1;
 var e621pRating = '';
 
@@ -220,15 +220,97 @@ $(function () {
         }
     });
 
-    // maybe checkout http://engineeredweb.com/blog/09/12/preloading-images-jquery-and-javascript/ for implementing the old precache
-    var cache = [];
-    // Arguments are image paths relative to the current page.
+    // Image loader with limited concurrency, retries and callbacks
+    var imageLoader = (function(){
+        var concurrency = 3;
+        var inFlight = 0;
+        var queue = [];
+        var cache = {}; // url -> { status: 'loading'|'loaded'|'error', img: Image, attempts: n, error: err }
+        var maxRetries = 2;
+        var retryDelayBase = 400; // ms
+
+        function processQueue(){
+            if (inFlight >= concurrency) return;
+            if (queue.length === 0) return;
+            var job = queue.shift();
+            inFlight++;
+            // use then(success, failure) instead of finally for broader compatibility
+            load(job.url, job.cb).then(function(){ inFlight--; processQueue(); }, function(){ inFlight--; processQueue(); });
+        }
+
+        function load(url, cb){
+            return new Promise(function(resolve){
+                if (!url) { if (cb) cb(null); return resolve(); }
+                // Already loaded
+                if (cache[url] && cache[url].status === 'loaded') {
+                    if (cb) cb(cache[url].img);
+                    return resolve();
+                }
+                // If currently loading, attach cb to onload chain
+                if (cache[url] && cache[url].status === 'loading') {
+                    cache[url].callbacks = cache[url].callbacks || [];
+                    if (cb) cache[url].callbacks.push(cb);
+                    return resolve();
+                }
+
+                cache[url] = cache[url] || { status: 'loading', attempts: 0, callbacks: [] };
+                if (cb) cache[url].callbacks.push(cb);
+
+                var attempt = function(){
+                    cache[url].attempts++;
+                    var img = new Image();
+                    img.onload = function(){
+                cache[url].status = 'loaded';
+                if (ep && ep.debug) console.log('imageLoader: loaded', url);
+                        cache[url].img = img;
+                        var cbs = cache[url].callbacks || [];
+                        cache[url].callbacks = [];
+                        cbs.forEach(function(f){ try{ f(img); }catch(e){} });
+                        if (cb) try{ cb(img); }catch(e){}
+                        return resolve();
+                    };
+                    img.onerror = function(ev){
+                        cache[url].error = ev || true;
+                        if (ep && ep.debug) console.warn('imageLoader: error', url, ev);
+                        if (cache[url].attempts <= maxRetries) {
+                            var delay = retryDelayBase * Math.pow(2, cache[url].attempts - 1);
+                            setTimeout(attempt, delay);
+                        } else {
+                            cache[url].status = 'error';
+                            var cbs = cache[url].callbacks || [];
+                            cache[url].callbacks = [];
+                            cbs.forEach(function(f){ try{ f(null); }catch(e){} });
+                            if (cb) try{ cb(null); }catch(e){}
+                            return resolve();
+                        }
+                    };
+                    // start load
+                    try { img.src = url; } catch(e){ img.onerror(e); }
+                };
+                attempt();
+            });
+        }
+
+        return {
+            enqueue: function(url, cb){
+                if (!url) { if (cb) cb(null); return; }
+                // If cached loaded call immediately
+                if (cache[url] && cache[url].status === 'loaded') { if (cb) cb(cache[url].img); return; }
+                // push to queue and try to process
+                queue.push({ url: url, cb: cb });
+                processQueue();
+            },
+            getStatus: function(url){ return cache[url] ? cache[url].status : null; },
+            getImage: function(url){ return cache[url] ? cache[url].img : null; }
+        };
+    })();
+
+    // Backwards-compatible preLoadImages wrapper (keeps API)
     var preLoadImages = function () {
         var args_len = arguments.length;
-        for (var i = args_len; i--;) {
-            var cacheImage = document.createElement('img');
-            cacheImage.src = arguments[i];
-            cache.push(cacheImage);
+        for (var i = 0; i < args_len; i++) {
+            var url = arguments[i];
+            imageLoader.enqueue(url);
         }
     };
 
@@ -599,35 +681,9 @@ $(function () {
         activeIndex = imageIndex;
 
         if (isLastImage(activeIndex) && ep.subredditUrl.indexOf('/imgur') != 0) {
-            // e621pPageNumber++;
-            // Load more images when we reach the end of the loaded set
+            e621pPageNumber++;
             getRedditImages();
-
-
         }
-        // Handle search
-$("#searchBtn").click(function () {
-    let tags = $("#tagSearch").val().trim();
-    if (tags.length === 0) return;
-
-    // Update tags for API
-    e621pTags = tags.replace(/\s+/g, "+"); 
-
-    // Reset state
-    e621pAfterId = 0;
-    ep.photos = [];
-    activeIndex = -1;
-
-    // Remove only old slides, keep placeholder div
-    $("#pictureSlider").html("<div></div>");
-
-    // Clear only the number buttons, not the whole navbox
-    $("#allNumberButtons").empty();
-    $("#sfwNumberButtons").empty();
-
-    // Reload new images
-    getRedditImages();
-});
 
 // Allow pressing Enter
 $("#tagSearch").keypress(function (e) {
@@ -671,19 +727,69 @@ $("#tagSearch").keypress(function (e) {
         // Retrieve the accompanying photo based on the index
         var photo = ep.photos[imageIndex];
 
-        // Create a new div and apply the CSS
+        // Create a new div placeholder and apply the CSS
         var cssMap = Object();
         cssMap['display'] = "none";
-        if(!photo.isVideo) {
-            cssMap['background-image'] = "url(" + photo.url + ")";
-            cssMap['background-repeat'] = "no-repeat";
-            cssMap['background-size'] = "contain";
-            cssMap['background-position'] = "center";
-        }
-
-        //var imgNode = $("<img />").attr("src", photo.image).css({opacity:"0", width: "100%", height:"100%"});
+        cssMap['background-repeat'] = "no-repeat";
+        cssMap['background-size'] = "contain";
+        cssMap['background-position'] = "center";
         var divNode = $("<div />").css(cssMap).addClass("clouds");
-        if(photo.isVideo & photo.url.indexOf('gfycat.com') >= 0) {
+
+        // Show a spinner until image loaded (for non-video)
+        if (!photo.isVideo) {
+            var spinner = $('<div class="spinner" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:1400;pointer-events:none;opacity:0.98"></div>');
+            divNode.css({ position: 'relative' }).append(spinner).addClass('loading');
+
+            // Set background-image immediately as a fallback so the browser starts loading and may display it
+            divNode.css('background-image', 'url(' + photo.url + ')');
+            // Create an <img> immediately as a secondary approach; we'll show it when it finishes.
+            var immediateImg = $('<img/>').attr('src', photo.url).css({width:'100%', height:'100%', objectFit:'contain', display:'none'}).attr('alt', photo.title || 'image');
+            divNode.append(immediateImg);
+            immediateImg.on('load', function(){
+                spinner.remove();
+                divNode.removeClass('loading');
+                $(this).show();
+            }).on('error', function(){
+                // If immediate load failed, keep spinner until loader callback resolves
+            });
+            // If the browser already has this image in cache, complete property may be true
+            try {
+                if (immediateImg[0].complete && immediateImg[0].naturalWidth > 0) {
+                    spinner.remove();
+                    immediateImg.show();
+                }
+            } catch(e){}
+
+            // Also enqueue in our loader (for caching + retries). Loader callback will replace content on persistent failure.
+            var slideTimeout = setTimeout(function(){
+                // if still showing only spinner after timeout, show friendly placeholder
+                if (divNode.hasClass('loading') && divNode.find('img').length === 0) {
+                    divNode.removeClass('loading');
+                    divNode.html('<div style="padding:20px;color:var(--muted);text-align:center;">Failed to load image (timeout)</div>');
+                }
+            }, 12000);
+
+            imageLoader.enqueue(photo.url, function(img){
+                if (ep && ep.debug) console.log('slideBackgroundPhoto: imageIndex', imageIndex, 'url', photo.url, 'loaderStatus', img ? 'ok' : 'err');
+                if (img) {
+                    // if immediateImg already loaded, it's fine; remove spinner if still present
+                    clearTimeout(slideTimeout);
+                    spinner.remove();
+                    divNode.removeClass('loading');
+                    if (!immediateImg.is(':visible')) {
+                        immediateImg.show();
+                    }
+                } else {
+                    // loader reports failure: remove immediateImg and show error placeholder
+                    clearTimeout(slideTimeout);
+                    spinner.remove();
+                    divNode.removeClass('loading');
+                    immediateImg.remove();
+                    divNode.html('<div style="padding:20px;color:var(--muted);text-align:center;">Failed to load image</div>');
+                }
+            });
+        }
+    if(photo.isVideo & photo.url.indexOf('gfycat.com') >= 0) {
             clearTimeout(nextSlideTimeoutId);
             var gfyid = photo.url.substr(1 + photo.url.lastIndexOf('/'));
             if(gfyid.indexOf('#') != -1)
@@ -869,15 +975,10 @@ $("#tagSearch").keypress(function (e) {
             }
         };
 
-        var failedAjax = function (jqXHR, textStatus, errorThrown) {
-            console.warn('AJAX failed', textStatus, errorThrown);
-            // show a non-blocking status and attempt retries (handled below)
-            showStatus('Network error — retrying...', 3000);
+        var failedAjax = function (data) {
+            //alert("Failed ajax, maybe a bad url? Sorry about that :(");
             failCleanup();
         };
-        var retryCount = 0;
-        var maxRetries = 3;
-        var retryDelayBase = 800; // ms
         var handleData = function (data) {
             //redditData = data //global for debugging data
             // NOTE: if data.data.after is null then this causes us to start
@@ -888,17 +989,8 @@ $("#tagSearch").keypress(function (e) {
 
             console.log(data)
 
-            if (!returnJson || returnJson.posts === undefined || returnJson.posts.length === 0) {
-                console.warn('Empty data from API', returnJson);
-                // If we haven't retried yet, try again before giving up
-                if (retryCount < maxRetries) {
-                    retryCount++;
-                    var delay = retryDelayBase * Math.pow(2, retryCount - 1);
-                    showStatus('Received empty data — retrying...', 2000);
-                    setTimeout(getRedditImages, delay);
-                    return;
-                }
-                showStatus('No data available.', 4000);
+            if (returnJson.length === 0) {
+                alert("No data from this url :(");
                 return;
             }
 
@@ -954,25 +1046,11 @@ $("#tagSearch").keypress(function (e) {
             if (e621pFailedImageNumber + e621pSuccessImageNumber == e621pLimit) {
                 e621pPageNumber++;
                 if(isLastImage(activeIndex)){
-                  //Loads next API page if at end of list and starts navigation.
                   getRedditImages();
                 }
                 return;
             }else{
-                // console.log(e621pFailedImageNumber);
-                // console.log(e621pSuccessImageNumber);
-                // console.log(e621pLimit);
-                //alert("No more data from this URL :(")
                 return;
-            }
-
-            // If the total number of posts in the API are smaller than the total posts requested per page, not enough to fill page, hence no more pages.
-            if (returnJson.length < limit) {
-                log("No more pages to load from the API, reloading the start");
-
-                // Show the user we're starting from the top
-                var numberButton = $("<span />").addClass("numberButton").text("-");
-                addNumberButton(numberButton);
             }
             loadingNextImages = false;
 
@@ -980,30 +1058,14 @@ $("#tagSearch").keypress(function (e) {
 
         // I still haven't been able to catch jsonp 404 events so the timeout
         // is the current solution sadly.
-        var doAjax = function() {
-            var settings = {
-                url: jsonUrl,
-                dataType: 'json',
-                success: function(data){
-                    retryCount = 0; // reset on success
-                    handleData(data);
-                },
-                error: function(jqXHR, textStatus, errorThrown){
-                    retryCount++;
-                    if (retryCount <= maxRetries) {
-                        var delay = retryDelayBase * Math.pow(2, retryCount - 1);
-                        showStatus('Network error — retrying in ' + Math.round(delay/1000) + 's', 2000 + delay);
-                        setTimeout(doAjax, delay);
-                    } else {
-                        failedAjax(jqXHR, textStatus, errorThrown);
-                        showStatus('Failed to load images. Try again later.', 5000);
-                    }
-                },
-                timeout: 8000
-            };
-            $.ajax(attachApiKeyHeaders(settings));
-        };
-        doAjax();
+        $.ajax({
+            url: jsonUrl,
+            dataType: 'json',
+            success: handleData,
+            error: failedAjax,
+            404: failedAjax,
+            timeout: 5000
+        });
     };
 
     // var getImgurAlbum = function (url) {
@@ -1130,20 +1192,22 @@ $("#tagSearch").keypress(function (e) {
         let tags = $("#tagSearch").val().trim();
         if (tags.length === 0) return;
 
-        // Encode spaces for API
-        e621pTags = tags.replace(/\s+/g, "+");
+        // Update tags for API
+        e621pTags = tags.replace(/\s+/g, "+"); 
 
-        // RESET SLIDESHOW STATE
+        // Reset state
+        e621pAfterId = 0;
         ep.photos = [];
         activeIndex = -1;
-        e621pAfterId = 0;        // start from the newest images
-        e621pPageNumber = 1;
 
-        // Clear UI
-        $("#pictureSlider").empty();     // remove old images
-        $(".numberButtonList ul").empty(); // remove old numbered buttons
+        // Remove only old slides, keep placeholder div
+        $("#pictureSlider").html("<div></div>");
 
-        // Load new images
+        // Clear only the number buttons, not the whole navbox
+        $("#allNumberButtons").empty();
+        $("#sfwNumberButtons").empty();
+
+        // Reload new images
         getRedditImages();
     });
 
@@ -1169,363 +1233,111 @@ $("#tagSearch").keypress(function (e) {
     // else
     getRedditImages();
 
-    /********************
-     * Search suggestions
-     ********************/
-    var commonSuggestions = [
-        'random','wolf','fox','dragon','shark','dog','cat','animation','cute','landscape','portrait','furry','male','female','straight','gay'
-    ];
-
-    var suggestionsEl = $("#searchSuggestions");
-    var previewEl = $("#searchPreview");
-
-    var showSuggestions = function(list) {
-        suggestionsEl.empty();
-        if (!list || list.length === 0) { suggestionsEl.addClass('hidden'); return; }
-        list.forEach(function(tag){
-            var item;
-            if (typeof tag === 'string') {
-                item = $('<div role="option" class="suggestion"></div>').data('tag', tag).append($('<span class="tag-name"/>').text(tag));
-            } else if (tag && typeof tag === 'object') {
-                // API returned tag objects
-                item = $('<div role="option" class="suggestion"></div>').data('tag', tag.name);
-                item.append($('<span class="tag-name"/>').text(tag.name));
-                item.append($('<span class="tag-count"/>').text(tag.post_count));
-            } else {
-                item = $('<div role="option" class="suggestion"></div>').data('tag', tag).append($('<span class="tag-name"/>').text(String(tag)));
-            }
-            suggestionsEl.append(item);
-        });
-        suggestionsEl.removeClass('hidden');
-    };
-
-    var filterSuggestions = function(val){
-        var q = (val || '').toLowerCase().trim();
-        if(q.length === 0){ showSuggestions(commonSuggestions.slice(0,8)); return; }
-        var out = commonSuggestions.filter(function(t){ return t.indexOf(q) === 0 || t.indexOf(q) > 0 });
-        showSuggestions(out.slice(0,12));
-
-        // fetch popular tag suggestions from API (best-effort) for 3+ chars
-        if (q.length >= 3) {
-            var tagsUrl = 'https://e621.net/tags.json?search[name_matches]=' + encodeURIComponent(q + '*') + '&limit=8';
-            $.ajax(attachApiKeyHeaders({ url: tagsUrl, dataType: 'json', success: function(data){
-                try {
-                    if (data && data.length) {
-                        var names = data.map(function(t){ return t.name; }).filter(Boolean);
-                        var merged = names.concat(out).filter(function(v,i,self){ return self.indexOf(v) === i; });
-                        showSuggestions(merged.slice(0,12));
-                    }
-                } catch(e){}
-            }, error: function(){} , timeout: 5000 }));
-        }
-    };
-
-    // Preview thumbnail fetch cache
+    var lastPreviewQuery = '';
+    var previewDebounceTimer = null;
+    var previewRequestId = 0;
     var previewCache = {};
 
-    // preview toggle state and request id for race-safety
-    var previewEnabled = true;
-    var previewRequestId = 0;
-
-    var previewCookie = 'searchPreviewEnabled';
-    var setPreviewCookie = function(val){ setCookie(previewCookie, val, cookieDays); };
-    var getPreviewCookie = function(){ var v = getCookie(previewCookie); return v === undefined ? null : (v === 'true'); };
-
-    // initialize preview toggle from cookie
-    var initPreviewToggle = function(){
-        var val = getPreviewCookie();
-        if (val === null) { previewEnabled = true; } else { previewEnabled = val; }
-        try { $('#togglePreview').prop('checked', previewEnabled); } catch(e){}
-        $('#togglePreview').on('change', function(){ previewEnabled = $(this).is(':checked'); setPreviewCookie(previewEnabled); });
-    };
-    initPreviewToggle();
-
-    // API Key storage helpers (localStorage)
-    var API_KEY_STORAGE = 'eviewer_api_key_v1';
-    function saveApiKey(key){
-        try { localStorage.setItem(API_KEY_STORAGE, key || ''); } catch(e){}
-    }
-    function loadApiKey(){
-        try { return localStorage.getItem(API_KEY_STORAGE) || ''; } catch(e){ return ''; }
-    }
-    function clearApiKey(){
-        try { localStorage.removeItem(API_KEY_STORAGE); } catch(e){}
-    }
-
-    // Initialize settings UI (api key input)
-    $(function(){
-        var stored = loadApiKey();
-        if (stored) {
-            $('#apiKeyInput').val(stored);
-        }
-        $('#saveApiKeyBtn').on('click', function(){
-            var v = $('#apiKeyInput').val() || '';
-            saveApiKey(v);
-            // give user some feedback
-            $('#statusMessage').text(v ? 'API key saved' : 'API key cleared').removeClass('hidden');
-            setTimeout(function(){ $('#statusMessage').addClass('hidden'); }, 1800);
-        });
-        $('#clearApiKeyBtn').on('click', function(){
-            $('#apiKeyInput').val(''); clearApiKey();
-            $('#statusMessage').text('API key cleared').removeClass('hidden');
-            setTimeout(function(){ $('#statusMessage').addClass('hidden'); }, 1500);
-        });
-    });
-
-    // Add API key to outgoing AJAX requests if present
-    // This uses jQuery's beforeSend hook per-request below; for convenience add a helper to attach headers.
-    function attachApiKeyHeaders(jqXhrSettings){
-        var key = loadApiKey();
-        if (!key) return jqXhrSettings;
-        // Common header name: Authorization: Bearer <key> (many APIs), but e621 uses 'User-Agent' and may accept 'Authorization'.
-        // We'll send both a custom header X-API-Key and Authorization: Bearer to maximize compatibility for proxies.
-        var before = jqXhrSettings.beforeSend;
-        jqXhrSettings.beforeSend = function(xhr){
-            try { xhr.setRequestHeader('Authorization', 'Bearer ' + key); } catch(e){}
-            try { xhr.setRequestHeader('X-API-Key', key); } catch(e){}
-            if (before) try { before(xhr); } catch(e){}
-        };
-        return jqXhrSettings;
-    }
-
-    var fetchPreviewForTag = function(tag, cb) {
-        if (!previewEnabled) return cb(null);
-        if (previewCache[tag]) return cb(previewCache[tag]);
-        var currentRequest = ++previewRequestId;
-        var url = 'https://e621.net/posts.json?limit=1&tags=' + encodeURIComponent(tag);
-        $.ajax(attachApiKeyHeaders({ url: url, dataType: 'json', success: function(data){
-            // if a newer request started, ignore this result
-            if (currentRequest !== previewRequestId) return cb(null);
-            try {
-                var thumb = null;
-                if (data && data.posts && data.posts.length > 0) {
-                    thumb = data.posts[0].file.url;
-                }
-                previewCache[tag] = thumb;
-                cb(thumb);
-            } catch(e){ cb(null); }
-        }, error: function(){ cb(null); }, timeout: 7000 }));
-    };
-
-    // Interactions
-    $(document).on('input', '#tagSearch', function(e){
-        var v = $(this).val();
-        filterSuggestions(v);
-    });
-
-    // click suggestion -> populate input and show preview (single click)
-    $(document).on('click', '#searchSuggestions .suggestion', function(){
-        var tag = $(this).data('tag');
-        $('#tagSearch').val(tag);
-        $('#searchSuggestions').addClass('hidden');
-        if (!previewEnabled) return;
-        previewEl.html('<div class="spinner"></div>');
-        previewEl.removeClass('hidden');
-        fetchPreviewForTag(tag, function(thumb){
-            if(!thumb) { previewEl.addClass('hidden'); return; }
-            previewEl.html('<img src="'+thumb+'" alt="preview"/>');
-            previewEl.removeClass('hidden');
-        });
-    });
-
-    // double click suggestion -> run search immediately
-    $(document).on('dblclick', '#searchSuggestions .suggestion', function(){
-        var tag = $(this).data('tag');
-        $('#tagSearch').val(tag);
-        $('#searchSuggestions').addClass('hidden');
-        $('#searchBtn').click();
-    });
-
-    // on pointer interaction (click/tap or hover) show preview — prefer click/tap for touch devices
-    $(document).on('pointerenter pointerdown click', '#searchSuggestions .suggestion', function(e){
-        // if pointerenter on desktop, allow hover behavior
-        var tag = $(this).data('tag');
-        if (!previewEnabled) return;
-        previewEl.html('<div class="spinner"></div>');
-        previewEl.removeClass('hidden');
-        fetchPreviewForTag(tag, function(thumb){
-            if(!thumb) { previewEl.addClass('hidden'); return; }
-            previewEl.html('<img src="'+thumb+'" alt="preview"/>');
-            previewEl.removeClass('hidden');
-        });
-    });
-
-    // On pointer leave (mouse) hide preview. On touch devices prefer explicit close (click outside) to avoid accidental hide.
-    $(document).on('pointerleave', '#searchSuggestions .suggestion', function(e){
-        // pointerType may be undefined in some browsers — default to hide only for mouse
-        try {
-            if (e && e.originalEvent && e.originalEvent.pointerType && e.originalEvent.pointerType !== 'touch') {
-                previewEl.addClass('hidden');
-            }
-        } catch(err){
-            previewEl.addClass('hidden');
-        }
-    });
-
-    // Clicking outside closes suggestions/preview
-    $(document).on('click', function(e){
-        if(!$(e.target).closest('#searchBar').length){
-            $('#searchSuggestions').addClass('hidden');
-            $('#searchPreview').addClass('hidden');
-        }
-    });
-
-    // show default top suggestions when focusing the input
-    $(document).on('focus', '#tagSearch', function(){ filterSuggestions($(this).val()); });
-
-    // Keyboard navigation for suggestions
-    $(document).on('keydown', '#tagSearch', function(e){
-        var KEY_UP = 38, KEY_DOWN = 40, KEY_ENTER = 13, KEY_ESC = 27, KEY_TAB = 9;
-        var visible = !suggestionsEl.hasClass('hidden');
-        if (!visible) return;
-        var active = suggestionsEl.find('.suggestion.active');
-        if (e.which === KEY_DOWN) {
-            e.preventDefault();
-            if (active.length === 0) {
-                suggestionsEl.find('.suggestion').first().addClass('active');
-            } else {
-                var next = active.next('.suggestion');
-                if (next.length) { active.removeClass('active'); next.addClass('active'); }
-            }
-        } else if (e.which === KEY_UP) {
-            e.preventDefault();
-            if (active.length === 0) {
-                suggestionsEl.find('.suggestion').last().addClass('active');
-            } else {
-                var prev = active.prev('.suggestion');
-                if (prev.length) { active.removeClass('active'); prev.addClass('active'); }
-            }
-        } else if (e.which === KEY_ENTER) {
-            e.preventDefault();
-            var sel = active.length ? active : suggestionsEl.find('.suggestion').first();
-            if (sel.length) {
-                var tag = sel.data('tag');
-                $('#tagSearch').val(tag);
-                suggestionsEl.addClass('hidden');
-                $('#searchBtn').click();
-            }
-        } else if (e.which === KEY_TAB) {
-            // show preview on tab
-            var selTab = active.length ? active : suggestionsEl.find('.suggestion').first();
-            if (selTab.length) {
-                e.preventDefault();
-                var tag = selTab.data('tag');
-                $('#tagSearch').val(tag);
-                suggestionsEl.addClass('hidden');
-                if (previewEnabled) { previewEl.html('<div class="spinner"></div>'); previewEl.removeClass('hidden'); fetchPreviewForTag(tag, function(thumb){ if(!thumb) { previewEl.html('<div class="no-preview">No preview</div>'); return; } previewEl.html('<img src="'+thumb+'" alt="preview"/>'); }); }
-            }
-        } else if (e.which === KEY_ESC) {
-            suggestionsEl.addClass('hidden');
-        }
-    });
-
-    // Preview 'Search' button inside preview area
-    $(document).on('click', '#previewSearchBtn', function(e){
-        var tag = $('#tagSearch').val().trim();
-        if (!tag) return;
-        $('#searchBtn').click();
-    });
-
-    // Render a grid of image previews under the search box
-    function renderSearchPreview(posts, query) {
-        if (!posts || posts.length === 0) {
-            $('#searchPreview').html('<div class="preview-empty">No preview results</div>');
-            $('#searchPreview').removeClass('hidden');
+    function updateSearchPreview(query) {
+        if (!query || query.length < 2) {
+            $("#viewer").find('.preview-grid').remove();
             return;
         }
-        var grid = $('<div class="preview-grid"/>');
-        posts.forEach(function(p){
-            var thumb = p.file && p.file.url ? p.file.url : '';
-            var item = $('<div class="preview-item" tabindex="0"/>');
-            var img = $('<img/>').attr('src', thumb).attr('alt', p.tags ? (p.tags.join ? p.tags.join(' ') : '') : 'preview');
-            var meta = $('<div class="preview-meta"/>');
-            var title = $('<span/>').text(query).css({'font-weight':'700'});
-            var info = $('<span/>').text(p.id ? ('#' + p.id) : '');
-            meta.append(title).append(info);
-            item.append(img).append(meta);
-            // clicking the preview opens the post url or image in a new tab
-            item.on('click', function(){
-                if (p.file && p.file.url) {
-                    window.open(p.file.url, '_blank');
+
+        // Don't repeat the same query
+        if (query === lastPreviewQuery) return;
+        lastPreviewQuery = query;
+
+        // Clear previous timeout if it exists
+        if (previewDebounceTimer) clearTimeout(previewDebounceTimer);
+
+        // Show loading state immediately
+        var $previewArea = $("#viewer");
+        if (!$previewArea.find('.preview-grid').length) {
+            $previewArea.prepend('<div class="preview-grid"><div class="loading">Loading previews...</div></div>');
+        }
+
+        // Debounce the actual request
+        previewDebounceTimer = setTimeout(function() {
+            var thisRequestId = ++previewRequestId;
+            
+            // Check cache first
+            if (previewCache[query]) {
+                renderPreviewGrid(previewCache[query], query);
+                return;
+            }
+
+            // Make the API request
+            $.ajax({
+                url: 'https://e621.net/posts.json?tags=' + encodeURIComponent(query) + '&limit=12',
+                dataType: 'json',
+                beforeSend: function() {
+                    $previewArea.find('.preview-grid').html('<div class="loading">Loading previews...</div>');
+                },
+                success: function(data) {
+                    // Ignore if a newer request has started
+                    if (thisRequestId !== previewRequestId) return;
+                    
+                    try {
+                        var previews = [];
+                        if (data && data.posts) {
+                            previews = data.posts.map(function(p) {
+                                return {
+                                    id: p.id,
+                                    url: p.preview && p.preview.url ? p.preview.url : p.file.url,
+                                    tags: p.tags ? p.tags.general || [] : []
+                                };
+                            }).filter(function(p) { return p.url; });
+                        }
+                        previewCache[query] = previews;
+                        renderPreviewGrid(previews, query);
+                    } catch(e) {
+                        console.error('Preview error:', e);
+                        $previewArea.find('.preview-grid').html('<div class="error">Error loading previews</div>');
+                    }
+                },
+                error: function() {
+                    if (thisRequestId !== previewRequestId) return;
+                    $previewArea.find('.preview-grid').html('<div class="error">Could not load previews</div>');
                 }
             });
-            grid.append(item);
+        }, 300); // Debounce for 300ms
+    }
+
+    function renderPreviewGrid(previews, query) {
+        var $previewArea = $("#viewer");
+        var $grid = $previewArea.find('.preview-grid');
+        
+        if (!previews || previews.length === 0) {
+            $grid.html('<div class="no-results">No preview results for: ' + query + '</div>');
+            return;
+        }
+
+        var html = previews.map(function(preview) {
+            return '<div class="preview-item" data-id="' + preview.id + '">' +
+                   '<img src="' + preview.url + '" alt="' + (preview.tags.slice(0,3).join(' ')) + '">' +
+                   '<div class="preview-meta">' + preview.tags.slice(0,3).join(', ') + '</div>' +
+                   '</div>';
+        }).join('');
+
+        $grid.html(html);
+
+        // Add click handlers to preview items
+        $grid.find('.preview-item').click(function() {
+            var tags = $(this).find('.preview-meta').text();
+            $("#tagSearch").val(tags);
+            $("#searchBtn").click();
         });
-        $('#searchPreview').html('').append(grid);
-        $('#searchPreview').removeClass('hidden');
     }
 
-    // Debounced fetch for preview images (best-effort)
-    var fetchSearchPreview = (function(){
-        var timer = null;
-        return function(){
-            var q = $('#tagSearch').val().trim();
-            clearTimeout(timer);
-            if (!previewEnabled) { $('#searchPreview').addClass('hidden'); return; }
-            if (!q) { $('#searchPreview').addClass('hidden'); return; }
-            timer = setTimeout(function(){
-                var url = 'https://e621.net/posts.json?limit=9&tags=' + encodeURIComponent(q);
-                $('#searchPreview').html('<div class="preview-empty"><div class="spinner"></div></div>').removeClass('hidden');
-                $.ajax(attachApiKeyHeaders({ url: url, dataType: 'json', success: function(data){
-                    try {
-                        var posts = (data && data.posts) ? data.posts : [];
-                        renderSearchPreview(posts, q);
-                    } catch(e){ $('#searchPreview').html('<div class="preview-empty">No preview results</div>'); }
-                }, error: function(){ $('#searchPreview').html('<div class="preview-empty">No preview results</div>'); }, timeout: 6000 }));
-            }, 300);
-        };
-    })();
-
-    // attach preview behavior to input (also used by suggestion preview)
-    $(document).on('input', '#tagSearch', function(){ fetchSearchPreview(); });
-
-    // hide preview on click outside (already existing handler hides suggestions) - ensure preview hidden
-    $(document).on('click', function(e){ if(!$(e.target).closest('#searchBar').length){ $('#searchPreview').addClass('hidden'); } });
-
-    // Position preview under the search bar and clamp to viewport
-    function positionPreview() {
-        var $preview = $('#searchPreview');
-        var $bar = $('#searchBar');
-        if ($preview.length === 0 || $bar.length === 0) return;
-        var barRect = $bar[0].getBoundingClientRect();
-        var previewWidth = $preview.outerWidth();
-        var left = barRect.left + (barRect.width / 2) - (previewWidth / 2);
-        // clamp
-        var minLeft = 12;
-        var maxLeft = window.innerWidth - previewWidth - 12;
-        left = Math.max(minLeft, Math.min(left, maxLeft));
-        $preview.css({ left: left + 'px' });
-    }
-
-    function positionSuggestions() {
-        var $s = $('#searchSuggestions');
-        var $bar = $('#searchBar');
-        if ($s.length === 0 || $bar.length === 0) return;
-        var barRect = $bar[0].getBoundingClientRect();
-        var sugWidth = $s.outerWidth();
-        var left = barRect.left + (barRect.width / 2) - (sugWidth / 2);
-        var minLeft = 8;
-        var maxLeft = window.innerWidth - sugWidth - 8;
-        left = Math.max(minLeft, Math.min(left, maxLeft));
-        $s.css({ left: left + 'px' });
-    }
-
-    // whenever preview becomes visible, re-position
-    var observer = new MutationObserver(function(mutations){
-        mutations.forEach(function(m){
-            if (m.target && $(m.target).is('#searchPreview')) {
-                if (!$(m.target).hasClass('hidden')) positionPreview();
-            }
-            if (m.target && $(m.target).is('#searchSuggestions')) {
-                if (!$(m.target).hasClass('hidden')) positionSuggestions();
-            }
-        });
+    // Initialize keypress handler for enter key and preview updates
+    $("#tagSearch").on('keypress input', function (e) {
+        if (e.type === 'keypress' && e.which === 13) {
+            $("#searchBtn").click();
+        } else if (e.type === 'input') {
+            updateSearchPreview($(this).val().trim());
+        }
     });
-    var target = document.getElementById('searchPreview');
-    if (target) observer.observe(target, { attributes: true, attributeFilter: ['class'] });
-
-    // reposition on resize
-    $(window).on('resize', positionPreview);
 
         window.slideNext = function(){
             if(!nsfw) {
