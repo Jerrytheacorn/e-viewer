@@ -1,11 +1,13 @@
-
 import type { E621Post } from '../types/e621';
+import type { PlatformSettings } from '../components/Settings';
 
-export type Platform = 'e621' | 'r34';
+export type Platform = 'e621' | 'r34' | 'paheal' | 'r34us';
 
 const BASES = {
   e621: 'https://e621.net',
-  r34: 'https://api.rule34.xxx'
+  r34: 'https://api.rule34.xxx',
+  paheal: 'https://rule34.paheal.net/api',
+  r34us: 'https://rule34.us/index.php'
 };
 
 // Optional proxy base (set VITE_PROXY_URL in .env to something like http://localhost:3001/proxy?url=)
@@ -17,7 +19,21 @@ function maybeProxy(url: string) {
   return `${PROXY}${encodeURIComponent(url)}`
 }
 
-export async function searchPosts(query: string, platform: Platform = 'e621', limit = 100) {
+// Add credentials to URL if available
+function addCredentials(url: string, platform: Platform, settings?: PlatformSettings) {
+  if (!settings) return url;
+  
+  const creds = settings[platform as keyof PlatformSettings];
+  if (!creds || (!creds.user && !creds.key)) return url;
+
+  const urlObj = new URL(url);
+  if (creds.user) urlObj.searchParams.set('user', creds.user);
+  if (creds.key) urlObj.searchParams.set('key', creds.key);
+  
+  return urlObj.toString();
+}
+
+export async function searchPosts(query: string, platform: Platform = 'e621', limit = 100, settings?: PlatformSettings) {
   if (!query) return []
 
   if (platform === 'e621') {
@@ -36,8 +52,11 @@ export async function searchPosts(query: string, platform: Platform = 'e621', li
         video_url: (p.file.ext === 'webm' || p.file.ext === 'mp4') ? p.file.url : undefined
       }
     })) as E621Post[];
-  } else if (platform === 'r34') {
-    const url = `${BASES.r34}/index.php?page=dapi&s=post&q=index&json=1&limit=${limit}&tags=${encodeURIComponent(query)}`;
+  } 
+  
+  else if (platform === 'r34') {
+    let url = `${BASES.r34}/index.php?page=dapi&s=post&q=index&json=1&limit=${limit}&tags=${encodeURIComponent(query)}`;
+    url = addCredentials(url, platform, settings);
     const fetchUrl = maybeProxy(url)
     const res = await fetch(fetchUrl);
     if (!res.ok) throw new Error('r34 search failed: ' + res.status);
@@ -64,5 +83,75 @@ export async function searchPosts(query: string, platform: Platform = 'e621', li
       };
     }) as E621Post[];
   }
+  
+  else if (platform === 'paheal') {
+    // Paheal uses XML API by default, we'll try to parse it or use their search
+    let url = `${BASES.paheal}/danbooru/find_posts/index.xml?tags=${encodeURIComponent(query)}&limit=${limit}`;
+    url = addCredentials(url, platform, settings);
+    const fetchUrl = maybeProxy(url);
+    
+    const res = await fetch(fetchUrl);
+    if (!res.ok) throw new Error('Paheal search failed: ' + res.status);
+    
+    const text = await res.text();
+    
+    // Basic XML parsing for Paheal
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(text, 'text/xml');
+    const posts = doc.querySelectorAll('post');
+    
+    return Array.from(posts).map(post => {
+      const fileUrl = post.getAttribute('file_url') || '';
+      const previewUrl = post.getAttribute('preview_url') || '';
+      const tags = post.getAttribute('tags') || '';
+      const id = post.getAttribute('id') || '0';
+      
+      const ext = fileUrl.split('.').pop()?.toLowerCase();
+      const isVideo = ext === 'webm' || ext === 'mp4';
+      
+      return {
+        id: Number(id),
+        file: {
+          url: fileUrl,
+          preview_url: previewUrl,
+          type: isVideo ? 'video' : 'image',
+          video_url: isVideo ? fileUrl : undefined
+        },
+        tags: { general: tags.split(' ').filter(t => t) }
+      };
+    }) as E621Post[];
+  }
+  
+  else if (platform === 'r34us') {
+    let url = `${BASES.r34us}?page=dapi&s=post&q=index&json=1&limit=${limit}&tags=${encodeURIComponent(query)}`;
+    url = addCredentials(url, platform, settings);
+    const fetchUrl = maybeProxy(url);
+    
+    const res = await fetch(fetchUrl);
+    if (!res.ok) throw new Error('Rule34.us search failed: ' + res.status);
+    
+    const data = await res.json();
+    
+    if (typeof data === 'string') {
+      throw new Error('Rule34.us: ' + data);
+    }
+    
+    // Normalize to E621Post shape (similar to r34)
+    return (Array.isArray(data) ? data : []).map((p: any) => {
+      const ext = (p.file_url || '').split('.').pop()?.toLowerCase();
+      const isVideo = ext === 'webm' || ext === 'mp4';
+      return {
+        id: Number(p.id),
+        file: {
+          url: p.file_url,
+          preview_url: p.preview_url || p.sample_url,
+          type: isVideo ? 'video' : 'image',
+          video_url: isVideo ? p.file_url : undefined
+        },
+        tags: { general: (p.tags || '').split(' ') }
+      };
+    }) as E621Post[];
+  }
+  
   return [];
 }
