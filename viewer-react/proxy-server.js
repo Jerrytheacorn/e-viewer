@@ -5,12 +5,26 @@ const PORT = 3001;
 
 const ALLOWED_HOSTS = [
   'https://e621.net',
-  'https://api.rule34.xxx'
+  'https://api.rule34.xxx',
+  'https://rule34.paheal.net',
+  'https://rule34.us'
 ];
 
-// Optional credentials for rule34: set RULE34_USER and RULE34_KEY in environment
-const RULE34_USER = process.env.RULE34_USER;
-const RULE34_KEY = process.env.RULE34_KEY;
+// Optional credentials for different platforms: set environment variables
+const CREDENTIALS = {
+  r34: {
+    user: process.env.RULE34_USER,
+    key: process.env.RULE34_KEY
+  },
+  paheal: {
+    user: process.env.PAHEAL_USER,
+    key: process.env.PAHEAL_KEY
+  },
+  r34us: {
+    user: process.env.R34US_USER,
+    key: process.env.R34US_KEY
+  }
+};
 
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -32,14 +46,29 @@ app.get('/proxy', async (req, res) => {
       return res.status(400).json({ error: 'Invalid or disallowed host', url: decoded });
     }
 
-    // If this is a rule34 request and credentials are provided, append them as query params
+    // Determine which platform and add credentials if available
     let fetchUrl = decoded;
-    if (decoded.startsWith('https://api.rule34.xxx') && (RULE34_USER || RULE34_KEY)) {
+    let platformCreds = null;
+    
+    if (decoded.startsWith('https://api.rule34.xxx')) {
+      platformCreds = CREDENTIALS.r34;
+    } else if (decoded.startsWith('https://rule34.paheal.net')) {
+      platformCreds = CREDENTIALS.paheal;
+    } else if (decoded.startsWith('https://rule34.us')) {
+      platformCreds = CREDENTIALS.r34us;
+    }
+    
+    // Append credentials if they exist and aren't already in the URL
+    if (platformCreds && (platformCreds.user || platformCreds.key)) {
       const u = new URL(decoded);
-      if (RULE34_USER) u.searchParams.set('user', RULE34_USER);
-      if (RULE34_KEY) u.searchParams.set('key', RULE34_KEY);
+      if (platformCreds.user && !u.searchParams.has('user')) {
+        u.searchParams.set('user', platformCreds.user);
+      }
+      if (platformCreds.key && !u.searchParams.has('key')) {
+        u.searchParams.set('key', platformCreds.key);
+      }
       fetchUrl = u.toString();
-      console.log('[proxy] appended rule34 credentials to URL');
+      console.log('[proxy] appended credentials to URL');
     }
 
     console.log('[proxy] fetching upstream:', fetchUrl);
@@ -62,4 +91,8 @@ app.get('/proxy', async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Proxy server running on http://localhost:${PORT}`);
+  console.log('Configured credentials:');
+  console.log('  Rule34.xxx:', CREDENTIALS.r34.user ? '✓' : '✗');
+  console.log('  Rule34 Paheal:', CREDENTIALS.paheal.user ? '✓' : '✗');
+  console.log('  Rule34.us:', CREDENTIALS.r34us.user ? '✓' : '✗');
 });
