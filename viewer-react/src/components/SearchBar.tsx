@@ -6,7 +6,7 @@ type Props = {
   onSearch?: (v: string) => void
 }
 
-export default function SearchBar({ value, onChange, onSearch }: Props){
+export default function SearchBar({ value = '', onChange, onSearch }: Props){
   return (
     <div className="mb-4 flex items-center gap-2">
       <input

@@ -23,7 +23,15 @@ function maybeProxy(url: string) {
 function addCredentials(url: string, platform: Platform, settings?: PlatformSettings) {
   if (!settings) return url;
   
-  const creds = settings[platform as keyof PlatformSettings];
+  const platformMap: Record<Platform, keyof PlatformSettings> = {
+    e621: 'r34', // e621 doesn't use settings
+    r34: 'r34',
+    paheal: 'paheal',
+    r34us: 'r34us'
+  };
+  
+  const credKey = platformMap[platform];
+  const creds = settings[credKey];
   if (!creds || (!creds.user && !creds.key)) return url;
 
   const urlObj = new URL(url);

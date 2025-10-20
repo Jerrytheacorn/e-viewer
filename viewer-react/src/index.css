@@ -1,6 +1,38 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+.preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 1rem;
+}
 
-html, body, #root { height: 100%; }
-body { @apply bg-gray-900 text-white; }
+.preview-item {
+  position: relative;
+  cursor: pointer;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  height: 150px;
+}
+
+.preview-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: opacity 0.2s;
+}
+
+.preview-item:hover img {
+  opacity: 0.8;
+}
+
+.preview-meta {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 0.5rem;
+  font-size: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
