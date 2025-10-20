@@ -1,5 +1,5 @@
 import type { E621Post } from '../types/e621';
-import type { PlatformSettings } from '../components/Settings';
+import type { PlatformSettings } from '../types/settings';
 
 export type Platform = 'e621' | 'r34' | 'paheal' | 'r34us';
 

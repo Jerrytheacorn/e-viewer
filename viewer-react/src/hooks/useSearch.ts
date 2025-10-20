@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { searchPosts, Platform } from '../services/api'
 import { useEffect, useState } from 'react'
-import type { PlatformSettings } from '../components/Settings'
+import type { PlatformSettings } from '../types/settings'
 
 export function useSearch(query: string, platform: Platform, limit = 80, settings?: PlatformSettings, enabled = true) {
   // Debounce query

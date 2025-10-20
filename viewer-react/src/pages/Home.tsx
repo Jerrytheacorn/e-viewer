@@ -1,138 +1,159 @@
-import React, { useState, useEffect } from 'react'
-import SearchBar from '../components/SearchBar'
-import SearchPreview from '../components/SearchPreview'
-import ImageGrid from '../components/ImageGrid'
-import ImageModal from '../components/ImageModal'
-import Slideshow from '../components/Slideshow'
-import Settings, { PlatformSettings } from '../components/Settings'
-import { useSearch } from '../hooks/useSearch'
-import type { E621Post } from '../types/e621'
-import type { Platform } from '../services/api'
+// File: src/components/Settings.tsx
+import React, { useState } from 'react'
+import type { PlatformSettings } from '../types/settings'
 
-const SETTINGS_KEY = 'e621-viewer-settings';
-
-function loadSettings(): PlatformSettings {
-  try {
-    const stored = localStorage.getItem(SETTINGS_KEY);
-    if (stored) {
-      return JSON.parse(stored);
-    }
-  } catch (e) {
-    console.error('Failed to load settings:', e);
-  }
-  return {
-    r34: {},
-    paheal: {},
-    r34us: {}
-  };
+interface Props {
+  onClose: () => void
+  settings: PlatformSettings
+  onSave: (settings: PlatformSettings) => void
 }
 
-function saveSettings(settings: PlatformSettings) {
-  try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  } catch (e) {
-    console.error('Failed to save settings:', e);
-  }
-}
+export default function Settings({ onClose, settings, onSave }: Props) {
+  const [localSettings, setLocalSettings] = useState<PlatformSettings>(settings)
 
-export default function Home(){
-  const [query, setQuery] = useState('wolf')
-  const [selected, setSelected] = useState<E621Post | null>(null)
-  const [platform, setPlatform] = useState<Platform>('e621')
-  const [limit, setLimit] = useState(80)
-  const [nsfwOnly, setNsfwOnly] = useState(true)
-  const [randomMode, setRandomMode] = useState(false)
-  const [slideshowOpen, setSlideshowOpen] = useState(false)
-  const [slideshowStart, setSlideshowStart] = useState(0)
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [settings, setSettings] = useState<PlatformSettings>(loadSettings())
-
-  // Build composed query similar to the old script: rating prefix for e621 and optional order:random
-  let composedQuery = query || ''
-  if (platform === 'e621') {
-    const ratingPrefix = nsfwOnly ? 'rating:e' : 'rating:s'
-    // if query already contains rating or order, don't duplicate
-    if (!composedQuery.includes('rating:') && !composedQuery.includes('order:')) {
-      composedQuery = ratingPrefix + (composedQuery ? ' ' + composedQuery : '')
-    }
-  }
-  if (randomMode && !composedQuery.includes('order:random')) {
-    composedQuery = 'order:random ' + composedQuery
+  const handleSave = () => {
+    onSave(localSettings)
+    onClose()
   }
 
-  // fetch posts when query or platform changes
-  // pass limit and settings to hook
-  const { data, isLoading, isError, error } = useSearch(composedQuery, platform, limit, settings, !!composedQuery.trim())
-  const posts: E621Post[] = data || []
-
-  const [apiError, setApiError] = useState<string | null>(null)
-
-  // surface react-query errors
-  useEffect(() => {
-    if (error) setApiError((error as Error).message || String(error))
-    else setApiError(null)
-  }, [error])
-
-  const handleSaveSettings = (newSettings: PlatformSettings) => {
-    setSettings(newSettings);
-    saveSettings(newSettings);
+  const updatePlatform = (platform: keyof PlatformSettings, field: 'user' | 'key', value: string) => {
+    setLocalSettings(prev => ({
+      ...prev,
+      [platform]: {
+        ...prev[platform],
+        [field]: value
+      }
+    }))
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-6">
-      <div className="flex gap-4 mb-4 items-center flex-wrap">
-        <SearchBar value={query} onChange={setQuery} onSearch={(q) => setQuery(q)} />
-        <select value={platform} onChange={e => setPlatform(e.target.value as Platform)} className="p-2 rounded bg-gray-800">
-          <option value="e621">e621</option>
-          <option value="r34">Rule34.xxx</option>
-          <option value="paheal">Rule34 Paheal</option>
-          <option value="r34us">Rule34.us</option>
-        </select>
-        <select value={limit} onChange={e => setLimit(Number(e.target.value))} className="p-2 rounded bg-gray-800">
-          <option value={20}>20</option>
-          <option value={40}>40</option>
-          <option value={80}>80</option>
-          <option value={160}>160</option>
-        </select>
-        <label className="flex items-center gap-2">
-          <input type="checkbox" checked={nsfwOnly} onChange={e => setNsfwOnly(e.target.checked)} /> NSFW
-        </label>
-        <button className="p-2 bg-indigo-600 rounded" onClick={() => { setRandomMode(r => !r); if (randomMode) setQuery('order:random') }}>Random</button>
-        <button 
-          className="p-2 bg-gray-700 rounded hover:bg-gray-600 flex items-center gap-2"
-          onClick={() => setSettingsOpen(true)}
-          title="Settings"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-          Settings
-        </button>
-      </div>
+    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-gray-800 rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold">Settings</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-white text-2xl">&times;</button>
+        </div>
 
-      {/* Inline preview (top few results) */}
-      {apiError && (
-        <div className="mb-4 p-3 bg-red-800 text-red-100 rounded">
-          <div className="flex justify-between items-center">
-            <div>{apiError}</div>
-            <button className="ml-4 text-sm underline" onClick={() => setApiError(null)}>Dismiss</button>
+        <div className="space-y-6">
+          {/* Rule34.xxx Settings */}
+          <div className="border-b border-gray-700 pb-4">
+            <h3 className="text-lg font-semibold mb-3">Rule34.xxx API</h3>
+            <p className="text-sm text-gray-400 mb-3">
+              Optional: Some content may require authentication. Get credentials at{' '}
+              <a href="https://rule34.xxx" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
+                rule34.xxx
+              </a>
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm text-gray-300 mb-1">Username</label>
+                <input
+                  type="text"
+                  value={localSettings.r34.user || ''}
+                  onChange={(e) => updatePlatform('r34', 'user', e.target.value)}
+                  className="w-full p-2 rounded bg-gray-700 text-white"
+                  placeholder="Enter username"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-300 mb-1">API Key</label>
+                <input
+                  type="password"
+                  value={localSettings.r34.key || ''}
+                  onChange={(e) => updatePlatform('r34', 'key', e.target.value)}
+                  className="w-full p-2 rounded bg-gray-700 text-white"
+                  placeholder="Enter API key"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Rule34 Paheal Settings */}
+          <div className="border-b border-gray-700 pb-4">
+            <h3 className="text-lg font-semibold mb-3">Rule34 Paheal</h3>
+            <p className="text-sm text-gray-400 mb-3">
+              Optional: Authentication for{' '}
+              <a href="https://rule34.paheal.net" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
+                rule34.paheal.net
+              </a>
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm text-gray-300 mb-1">Username</label>
+                <input
+                  type="text"
+                  value={localSettings.paheal.user || ''}
+                  onChange={(e) => updatePlatform('paheal', 'user', e.target.value)}
+                  className="w-full p-2 rounded bg-gray-700 text-white"
+                  placeholder="Enter username"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-300 mb-1">API Key</label>
+                <input
+                  type="password"
+                  value={localSettings.paheal.key || ''}
+                  onChange={(e) => updatePlatform('paheal', 'key', e.target.value)}
+                  className="w-full p-2 rounded bg-gray-700 text-white"
+                  placeholder="Enter API key"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Rule34.us Settings */}
+          <div className="pb-4">
+            <h3 className="text-lg font-semibold mb-3">Rule34.us</h3>
+            <p className="text-sm text-gray-400 mb-3">
+              Optional: Authentication for{' '}
+              <a href="https://rule34.us" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
+                rule34.us
+              </a>
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm text-gray-300 mb-1">Username</label>
+                <input
+                  type="text"
+                  value={localSettings.r34us.user || ''}
+                  onChange={(e) => updatePlatform('r34us', 'user', e.target.value)}
+                  className="w-full p-2 rounded bg-gray-700 text-white"
+                  placeholder="Enter username"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-300 mb-1">API Key</label>
+                <input
+                  type="password"
+                  value={localSettings.r34us.key || ''}
+                  onChange={(e) => updatePlatform('r34us', 'key', e.target.value)}
+                  className="w-full p-2 rounded bg-gray-700 text-white"
+                  placeholder="Enter API key"
+                />
+              </div>
+            </div>
           </div>
         </div>
-      )}
-      <SearchPreview posts={posts.slice(0, 12)} onSelect={(p: E621Post) => {
-        const tags = (p.tags?.general || []).slice(0, 6).join(' ')
-        if (tags) setQuery(tags)
-      }} />
 
-      {/* Main grid */}
-      <div className="mt-6">
-        <ImageGrid posts={posts} loading={isLoading} onOpen={(p: E621Post) => { setSelected(p); setSlideshowStart(posts.findIndex(x => x.id === p.id)); setSlideshowOpen(true) }} />
+        <div className="flex gap-3 mt-6">
+          <button
+            onClick={handleSave}
+            className="flex-1 p-3 bg-indigo-600 hover:bg-indigo-700 rounded font-semibold"
+          >
+            Save Settings
+          </button>
+          <button
+            onClick={onClose}
+            className="flex-1 p-3 bg-gray-700 hover:bg-gray-600 rounded font-semibold"
+          >
+            Cancel
+          </button>
+        </div>
+
+        <p className="text-xs text-gray-500 mt-4 text-center">
+          Settings are stored locally in your browser
+        </p>
       </div>
-
-      <ImageModal post={selected} onClose={() => setSelected(null)} />
-      {slideshowOpen && <Slideshow posts={posts} startIndex={slideshowStart} onClose={() => setSlideshowOpen(false)} />}
-      {settingsOpen && <Settings settings={settings} onSave={handleSaveSettings} onClose={() => setSettingsOpen(false)} />}
     </div>
   )
 }
